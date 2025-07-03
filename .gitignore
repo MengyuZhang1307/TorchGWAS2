@@ -1,0 +1,5 @@
+build/
+example/
+.vscode/
+workspace.code-workspace
+.DS_Store
