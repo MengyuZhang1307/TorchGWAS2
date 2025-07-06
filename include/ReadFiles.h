@@ -20,6 +20,7 @@ using uchar = unsigned char;
 using V_string = std::vector<std::string>; 
 using VV_string = std::vector<V_string>; 
 using UMap_str_VV_string = std::unordered_map<std::string, VV_string>;
+using V_bgen = std::vector<std::vector<std::vector<std::vector<double>>>>;
 typedef std::numeric_limits<double> dbl;
 
 namespace extTypes 
@@ -54,6 +55,7 @@ struct CovariateReadResult {
     UMap_str_VV_string covMap;
     int samSize;
     bool cov_is_duplicated;
+    int numSelCol;
 };
 
 char resolve_delim(const std::string& s);
@@ -85,5 +87,5 @@ void process_phenotype_file(
 void clean_covMap_by_invalid_indices(
     std::vector<std::string> const& sampleID_list,
     std::set<int> const& pheno_valid_indices,
-    std::unordered_map<std::string, std::vector<std::vector<std::string>>>& covMap
+    UMap_str_VV_string& covMap
 );

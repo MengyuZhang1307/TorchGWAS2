@@ -75,7 +75,7 @@ CovariateReadResult read_covariate_data(
     for (int i = numExpSelCol - 1; i >= 0; --i)
         covSelHeadersName.insert(covSelHeadersName.begin(), expCovSelHeadersName[i]);
 
-    int numSelCol = covSelHeadersName.size() - numExpSelCol - numIntSelCol;
+    result.numSelCol = covSelHeadersName.size() - numExpSelCol - numIntSelCol;
     std::vector<int> colSelVec(covSelHeadersName.size());
 
     std::ifstream fincov(cov_file);
@@ -274,8 +274,6 @@ void process_phenotype_file(
             }
         }
 
-
-
         if(!invalid_indices)
         {
             valid_indices.insert(row_indx);
@@ -319,7 +317,7 @@ void process_phenotype_file(
 void clean_covMap_by_invalid_indices(
     std::vector<std::string> const& sampleID_list,
     std::set<int> const& pheno_valid_indices,
-    std::unordered_map<std::string, std::vector<std::vector<std::string>>>& covMap
+    UMap_str_VV_string& covMap
 ) 
 {
     std::unordered_map<std::string, int> seen_count;

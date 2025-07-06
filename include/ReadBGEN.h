@@ -1,10 +1,9 @@
 #pragma once
 #include <libdeflate.h>
-#include <zlib.h>
+// #include <zlib.h>
 #include <zstd.h>
 #include "ReadFiles.h"
 
-// using namespace std;
 class Bgen 
 {
     public:
