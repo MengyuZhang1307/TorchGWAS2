@@ -39,14 +39,14 @@ V_bgen run_bgen(const GEMOptions& opt)
     bgen.processBgenHeaderBlock(opt.bgen_file);
     bgen.processBgenSampleBlock(bgen, opt.sample_file.c_str(), opt.use_sample_file, cov_result.covMap,
                                     opt.missing_key, cov_result.numSelCol, cov_result.samSize);
-    bgen.getPositionOfBgenVariant(bgen, opt.threads, "" , opt.do_filters);//give empty str for includeVariantFile
+    bgen.getPositionOfBgenVariant(bgen, opt.threads, opt.includeVariantFile, opt.do_filters);
     int stream_snps =1;
     
     V_bgen results(opt.threads);
 
     auto worker = [&](int tid) 
     {
-        auto thread_results = calcDosage(opt.bgen_file, opt.stream_snps, opt.threads, bgen); // returns nested result
+        auto thread_results = calcDosage(opt.bgen_file, opt.stream_snps, tid, bgen); // returns nested result
         results[tid] = std::move(thread_results);
     };
 

@@ -1,3 +1,0 @@
-/Users/ssalehinasab/Desktop/Bgen-reader/build-multi-bgen/CMakeFiles/GEM.dir
-/Users/ssalehinasab/Desktop/Bgen-reader/build-multi-bgen/CMakeFiles/edit_cache.dir
-/Users/ssalehinasab/Desktop/Bgen-reader/build-multi-bgen/CMakeFiles/rebuild_cache.dir

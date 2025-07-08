@@ -8,7 +8,18 @@ char resolve_delim(const std::string& s)
     return s[0];  // just return first char
 }
 
-GEMOptions getOptions(int argc, const char* argv[]) 
+std::vector<std::string> split(const std::string& s, char delim)  
+{
+        std::vector<std::string> out;
+        std::istringstream ss(s);
+        std::string token;
+        while (std::getline(ss, token, delim)) {
+            out.push_back(token);
+        }
+        return out;
+}
+
+GEMOptions get_options(int argc, const char* argv[]) 
 {
     if (argc < 14) 
     {
@@ -21,37 +32,22 @@ GEMOptions getOptions(int argc, const char* argv[])
     GEMOptions opt;
     opt.pheno_file  = argv[1];
     opt.cov_file  = argv[2];
-    opt.bgen_file  = argv[3];
-    opt.sample_file = argv[4];
-    opt.do_filters = std::string(argv[5]) == "true";
-    opt.use_sample_file = std::string(argv[6]) == "true";
-    opt.stream_snps = std::stoi(argv[7]);
-    opt.sampleid_header_name = argv[8];
-    opt.random_slope_header_name= argv[9];
-    opt.missing_key = argv[10];
-    opt.out_file = argv[11];
-    opt.threads = std::stoi(argv[12]);
-    // opt.delim_pheno           = argv[10][0];
-    // opt.delim_cov             = argv[11][0];
-
-
-    opt.delim_pheno = resolve_delim(argv[13]);
-    opt.delim_cov = resolve_delim(argv[14]);
-    
-    auto split = [](const std::string& s, char delim) -> std::vector<std::string> {
-        std::vector<std::string> out;
-        std::istringstream ss(s);
-        std::string token;
-        while (std::getline(ss, token, delim)) {
-            out.push_back(token);
-        }
-        return out;
-    };
-
-    opt.covariates = split(argv[15], ',');
-    opt.exposures = split(argv[16], ',');
-    opt.interactions = split(argv[17], ',');
-
+    opt.delim_pheno  = resolve_delim(argv[3]);
+    opt.delim_cov = resolve_delim(argv[4]);
+    opt.bgen_file = argv[5];
+    opt.sample_file = argv[6];
+    opt.do_filters = std::string(argv[7]) == "true";
+    opt.use_sample_file = std::string(argv[8]) == "true";
+    opt.includeVariantFile = argv[9];
+    opt.stream_snps = std::stoi(argv[10]);
+    opt.sampleid_header_name = argv[11];
+    opt.random_slope_header_name= argv[12];
+    opt.covariates = split(argv[13], ',');
+    opt.exposures = split(argv[14], ',');
+    opt.interactions = split(argv[15], ',');
+    opt.missing_key = argv[16];
+    opt.threads = std::stoi(argv[17]);
+    opt.out_file = argv[18];
     return opt;
 }
 
@@ -164,12 +160,10 @@ CovariateReadResult read_covariate_data(
 }
 
 
-
-
 void process_phenotype_file(
     std::string const& filename, 
     std::string sample_id_hdr,
-    std::vector<string> sampleID_list,
+    V_string sampleID_list,
     std::set<int> &valid_indices,
     V_string &column_names,
     VV_string &phenotype_data,
@@ -215,7 +209,7 @@ void process_phenotype_file(
     
     int num_columns = column_names.size();
     std::cout << "Total columns: " << num_columns << "\n"; 
-    cout << "****************************************************************************\n";
+    std::cout << "****************************************************************************\n";
     phenotype_data.resize(num_columns - 1);
 
     if(num_columns < 3)
@@ -347,7 +341,8 @@ void clean_covMap_by_invalid_indices(
         // Sort in descending order to erase from back to front
         std::sort(positions.rbegin(), positions.rend());
 
-        for (int pos : positions) {
+        for (int pos : positions) 
+        {
             if (pos >= 0 && pos < static_cast<int>(vecs.size())) 
             {
                 vecs.erase(vecs.begin() + pos);
@@ -365,15 +360,20 @@ void clean_covMap_by_invalid_indices(
 void write_bgen_result_to_file(const V_bgen& results, const std::string& filename, char delimiter) 
 {
     std::ofstream out(filename);
-    if (!out.is_open()) {
+    if (!out.is_open()) 
+    {
         std::cerr << "Error: could not open file " << filename << " for writing.\n";
         return;
     }
 
-    for (const auto& thread_vec : results) {
-        for (const auto& snp_vec : thread_vec) {
-            for (const auto& sample_vec : snp_vec) {
-                for (size_t i = 0; i < sample_vec.size(); ++i) {
+    for (const auto& thread_vec : results) 
+    {
+        for (const auto& snp_vec : thread_vec) 
+        {
+            for (const auto& sample_vec : snp_vec) 
+            {
+                for (size_t i = 0; i < sample_vec.size(); ++i) 
+                {
                     out << sample_vec[i];
                     if (i != sample_vec.size() - 1)
                         out << delimiter;
@@ -384,5 +384,5 @@ void write_bgen_result_to_file(const V_bgen& results, const std::string& filenam
     }
 
     out.close();
-    std::cout << "✅ BGEN results written to: " << filename << '\n';
+    std::cout << "\u2705 BGEN results written to: " << filename << '\n';
 }

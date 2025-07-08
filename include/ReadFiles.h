@@ -1,20 +1,23 @@
 #pragma once
-#include<iostream>
-#include<sstream>
-#include<string>
-#include<cstdint>
+#include <iostream>
+#include <cstdio>
+#include <vector>
+#include <algorithm>
+#include <sstream>
+#include <string>
+#include <cstdint>
 #include <limits>
-#include<stdio.h>
-#include<stdlib.h>
-#include<math.h>
-#include<set> 
-#include<fstream>
-#include<thread>
-#include<unordered_map>
-#include<unordered_set>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <set> 
+#include <fstream>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 
-using namespace std;
+// using namespace std;
 using uint = unsigned int;
 using uchar = unsigned char;
 using V_string = std::vector<std::string>; 
@@ -26,34 +29,27 @@ using V_bgen = std::vector<std::vector<std::vector<std::vector<float>>>>;
 using Set_string = std::set<std::string>;
 typedef std::numeric_limits<double> dbl;
 
-// namespace extTypes 
-// {
-//     using StringSet = std::set<std::string>;
-//     using VVString = std::vector<std::vector<uint>>;
-//     using SampleUnmap = std::unordered_map<std::string, std::vector<std::vector<std::string>>>;
-
-// }
-
 
 struct GEMOptions 
 {
     std::string pheno_file;
     std::string cov_file;
+    char delim_pheno;
+    char delim_cov;
     std::string bgen_file;
     std::string sample_file;
     bool do_filters = false;
     bool use_sample_file =false;
+    std::string includeVariantFile;
     int stream_snps = 1;
     std::string sampleid_header_name;
     std::string random_slope_header_name;
     std::string missing_key = "NA";
-    std::string out_file;
-    int threads;
-    char delim_pheno;
-    char delim_cov;
     std::vector<std::string> covariates;
     std::vector<std::string> exposures;
     std::vector<std::string> interactions;
+    int threads;
+    std::string out_file;
 };
 
 struct CovariateReadResult {
@@ -65,7 +61,8 @@ struct CovariateReadResult {
 };
 
 char resolve_delim(const std::string& s);
-GEMOptions getOptions(int argc, const char* argv[]);
+// Read options from argv
+GEMOptions get_options(int argc, const char* argv[]);
 
 CovariateReadResult read_covariate_data(
     const std::string& cov_file,

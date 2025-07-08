@@ -1,6 +1,4 @@
 #include "ReadBGEN.h"
-#include "../thirdparty/zstd-1.5.5/lib/zstd.h"
-#include "../thirdparty/libdeflate-1.18/libdeflate.h"
 
 /**************************************
 This function is revised based on the Parse function in BOLT-LMM v2.3 source code
@@ -680,9 +678,11 @@ void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeV
         uint t = 0;
         FILE* fin = bgen.fin;
         fseek(fin, offset + 4, SEEK_SET);
+
         for (uint snploop = 0; snploop < Mbgen; snploop++) 
         {
-            if (snploop == Mbgen_begin[t]) {
+            if (snploop == Mbgen_begin[t]) 
+            {
                 bgenVariantPos[t] = ftell(fin);
                 t++;
                 if (t == (Mbgen_begin.size())) 
@@ -706,7 +706,6 @@ void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeV
             ret = fread(&LS, 2, 1, fin);
             ret = fread(snpID, 1, LS, fin); 
             snpID[LS] = '\0';
-
             ushort LR; 
             ret = fread(&LR, 2, 1, fin);
             ret = fread(rsID, 1, LR, fin); 
@@ -887,12 +886,12 @@ VVV_float calcDosage(std::string bgenFile, int stream_snps, int thread_num, Bgen
             }
             snploop++;
 
-
             uint Nrow;
             if (Layout == 1) 
             {
                 ret = fread(&Nrow, 4, 1, fin3);
-                if (Nrow != Nbgen) {
+                if (Nrow != Nbgen) 
+                {
                     std::cerr << "\nERROR: Number of samples (" << Nrow << ") with genotype probabilities does not match number of samples specified in BGEN file (" << Nbgen << ").\n\n";
                     exit(1);
                 }
@@ -902,7 +901,6 @@ VVV_float calcDosage(std::string bgenFile, int stream_snps, int thread_num, Bgen
             ret = fread(&LS, 2, 1, fin3);
             ret = fread(snpID, 1, LS, fin3); 
             snpID[LS] = '\0';
-
             ushort LR; 
             ret = fread(&LR, 2, 1, fin3);
             ret = fread(rsID, 1, LR, fin3); 
@@ -1192,7 +1190,8 @@ VVV_float calcDosage(std::string bgenFile, int stream_snps, int thread_num, Bgen
     fclose(fin3);
 
     auto end_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Thread " << thread_num << " finished in ";
+    std::cout << "Thread " << thread_num << " finished in " ;
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "Elapsed time: " << duration.count() << " ms\n";
     return dosage_hdr;
-    // printExecutionTime1(start_time, end_time);
 }
