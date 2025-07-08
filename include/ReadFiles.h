@@ -20,28 +20,34 @@ using uchar = unsigned char;
 using V_string = std::vector<std::string>; 
 using VV_string = std::vector<V_string>; 
 using UMap_str_VV_string = std::unordered_map<std::string, VV_string>;
-using V_bgen = std::vector<std::vector<std::vector<std::vector<double>>>>;
+using VV_float = std::vector<std::vector<float>>;
+using VVV_float = std::vector<VV_float>;
+using V_bgen = std::vector<std::vector<std::vector<std::vector<float>>>>;
+using Set_string = std::set<std::string>;
 typedef std::numeric_limits<double> dbl;
 
-namespace extTypes 
-{
-    using StringSet = std::set<std::string>;
-    using VVString = std::vector<std::vector<uint>>;
-    using SampleUnmap = std::unordered_map<std::string, std::vector<std::vector<std::string>>>;
+// namespace extTypes 
+// {
+//     using StringSet = std::set<std::string>;
+//     using VVString = std::vector<std::vector<uint>>;
+//     using SampleUnmap = std::unordered_map<std::string, std::vector<std::vector<std::string>>>;
 
-}
+// }
 
 
 struct GEMOptions 
 {
-    std::string phenoFile;
-    std::string covFile;
-    std::string bgenFile;
-    std::string sampleFile;
-    std::string sampleIDHeaderName;
-    std::string randomSlopeHeaderName;
-    std::string missingKey;
-    std::string outFile;
+    std::string pheno_file;
+    std::string cov_file;
+    std::string bgen_file;
+    std::string sample_file;
+    bool do_filters = false;
+    bool use_sample_file =false;
+    int stream_snps = 1;
+    std::string sampleid_header_name;
+    std::string random_slope_header_name;
+    std::string missing_key = "NA";
+    std::string out_file;
     int threads;
     char delim_pheno;
     char delim_cov;
@@ -59,7 +65,7 @@ struct CovariateReadResult {
 };
 
 char resolve_delim(const std::string& s);
-GEMOptions getOptions(int argc, char* argv[]);
+GEMOptions getOptions(int argc, const char* argv[]);
 
 CovariateReadResult read_covariate_data(
     const std::string& cov_file,
@@ -89,3 +95,6 @@ void clean_covMap_by_invalid_indices(
     std::set<int> const& pheno_valid_indices,
     UMap_str_VV_string& covMap
 );
+
+void write_bgen_result_to_file(const V_bgen& results, const std::string& filename,
+                                char delimiter = ',');

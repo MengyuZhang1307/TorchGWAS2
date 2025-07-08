@@ -1,4 +1,3 @@
-#pragma once
 #include "ReadFiles.h"
 
 char resolve_delim(const std::string& s)
@@ -9,7 +8,7 @@ char resolve_delim(const std::string& s)
     return s[0];  // just return first char
 }
 
-GEMOptions getOptions(int argc, char* argv[]) 
+GEMOptions getOptions(int argc, const char* argv[]) 
 {
     if (argc < 14) 
     {
@@ -20,21 +19,24 @@ GEMOptions getOptions(int argc, char* argv[])
     }
 
     GEMOptions opt;
-    opt.phenoFile             = argv[1];
-    opt.covFile               = argv[2];
-    opt.bgenFile              = argv[3];
-    opt.sampleFile            = argv[4];
-    opt.sampleIDHeaderName    = argv[5];
-    opt.randomSlopeHeaderName= argv[6];
-    opt.missingKey            = argv[7];
-    opt.outFile               = argv[8];
-    opt.threads               = std::stoi(argv[9]);
+    opt.pheno_file  = argv[1];
+    opt.cov_file  = argv[2];
+    opt.bgen_file  = argv[3];
+    opt.sample_file = argv[4];
+    opt.do_filters = std::string(argv[5]) == "true";
+    opt.use_sample_file = std::string(argv[6]) == "true";
+    opt.stream_snps = std::stoi(argv[7]);
+    opt.sampleid_header_name = argv[8];
+    opt.random_slope_header_name= argv[9];
+    opt.missing_key = argv[10];
+    opt.out_file = argv[11];
+    opt.threads = std::stoi(argv[12]);
     // opt.delim_pheno           = argv[10][0];
     // opt.delim_cov             = argv[11][0];
 
 
-    opt.delim_pheno = resolve_delim(argv[10]);
-    opt.delim_cov   = resolve_delim(argv[11]);
+    opt.delim_pheno = resolve_delim(argv[13]);
+    opt.delim_cov = resolve_delim(argv[14]);
     
     auto split = [](const std::string& s, char delim) -> std::vector<std::string> {
         std::vector<std::string> out;
@@ -46,9 +48,9 @@ GEMOptions getOptions(int argc, char* argv[])
         return out;
     };
 
-    opt.covariates   = split(argv[12], ',');
-    opt.exposures    = split(argv[13], ',');
-    opt.interactions = split(argv[14], ',');
+    opt.covariates = split(argv[15], ',');
+    opt.exposures = split(argv[16], ',');
+    opt.interactions = split(argv[17], ',');
 
     return opt;
 }
@@ -56,27 +58,27 @@ GEMOptions getOptions(int argc, char* argv[])
 
 CovariateReadResult read_covariate_data(
     const std::string& cov_file,
-    std::vector<std::string> covSelHeadersName,
-    const std::vector<std::string>& expCovSelHeadersName,
-    const std::vector<std::string>& intCovSelHeadersName,
-    const std::string& sampleIDHeaderName,
-    const std::string& randomSlopeHeaderName,
+    std::vector<std::string> cov_sel_headers_name,
+    const std::vector<std::string>& exp_cov_sel_headers_name,
+    const std::vector<std::string>& int_cov_sel_headers_name,
+    const std::string& sampleid_header_name,
+    const std::string& random_slope_header_name,
     char delim_cov,
     const std::string missing_key) 
 {
     CovariateReadResult result;
     bool& cov_is_duplicated = result.cov_is_duplicated;
     cov_is_duplicated = false;
-    int numExpSelCol = expCovSelHeadersName.size();
-    int numIntSelCol = intCovSelHeadersName.size();
+    int numExpSelCol = exp_cov_sel_headers_name.size();
+    int numIntSelCol = int_cov_sel_headers_name.size();
 
     for (int i = numIntSelCol - 1; i >= 0; --i)
-        covSelHeadersName.insert(covSelHeadersName.begin(), intCovSelHeadersName[i]);
+        cov_sel_headers_name.insert(cov_sel_headers_name.begin(), int_cov_sel_headers_name[i]);
     for (int i = numExpSelCol - 1; i >= 0; --i)
-        covSelHeadersName.insert(covSelHeadersName.begin(), expCovSelHeadersName[i]);
+        cov_sel_headers_name.insert(cov_sel_headers_name.begin(), exp_cov_sel_headers_name[i]);
 
-    result.numSelCol = covSelHeadersName.size() - numExpSelCol - numIntSelCol;
-    std::vector<int> colSelVec(covSelHeadersName.size());
+    result.numSelCol = cov_sel_headers_name.size() - numExpSelCol - numIntSelCol;
+    std::vector<int> colSelVec(cov_sel_headers_name.size());
 
     std::ifstream fincov(cov_file);
     if (fincov.fail()) 
@@ -100,27 +102,27 @@ CovariateReadResult read_covariate_data(
         colNames[headerName] = header_i++;
     }
 
-    if (!colNames.count(sampleIDHeaderName))
+    if (!colNames.count(sampleid_header_name))
         throw std::runtime_error("ERROR: Sample ID column not found");
-    int SamIDCol = colNames[sampleIDHeaderName];
+    int SamIDCol = colNames[sampleid_header_name];
 
-    if (!randomSlopeHeaderName.empty()) 
+    if (!random_slope_header_name.empty()) 
     {
-        if (!colNames.count(randomSlopeHeaderName))
+        if (!colNames.count(random_slope_header_name))
             throw std::runtime_error("ERROR: Random slope column not found");
     }
 
-    for (const auto& h : expCovSelHeadersName)
+    for (const auto& h : exp_cov_sel_headers_name)
         if (!colNames.count(h)) throw std::runtime_error("ERROR: Exposure column not found: " + h);
-    for (const auto& h : intCovSelHeadersName)
+    for (const auto& h : int_cov_sel_headers_name)
         if (!colNames.count(h)) throw std::runtime_error("ERROR: Interaction column not found: " + h);
-    for (size_t i = 0; i < covSelHeadersName.size(); ++i) 
+    for (size_t i = 0; i < cov_sel_headers_name.size(); ++i) 
     {
-        if (!colNames.count(covSelHeadersName[i]))
+        if (!colNames.count(cov_sel_headers_name[i]))
         {
-            throw std::runtime_error("ERROR: Covariate column not found: " + covSelHeadersName[i]);
+            throw std::runtime_error("ERROR: Covariate column not found: " + cov_sel_headers_name[i]);
         }
-        colSelVec[i] = colNames[covSelHeadersName[i]];
+        colSelVec[i] = colNames[cov_sel_headers_name[i]];
     }
 
     int nrows = 0;
@@ -175,7 +177,6 @@ void process_phenotype_file(
     std::string missing_key
     ) 
 {
-    std::mutex result_mutex;
     std::unordered_set<std::string> seen;
     std::ifstream file(filename);
 
@@ -358,4 +359,30 @@ void clean_covMap_by_invalid_indices(
             covMap.erase(id);
         }
     }
+}
+
+// Optional: pass delimiter (default is comma)
+void write_bgen_result_to_file(const V_bgen& results, const std::string& filename, char delimiter) 
+{
+    std::ofstream out(filename);
+    if (!out.is_open()) {
+        std::cerr << "Error: could not open file " << filename << " for writing.\n";
+        return;
+    }
+
+    for (const auto& thread_vec : results) {
+        for (const auto& snp_vec : thread_vec) {
+            for (const auto& sample_vec : snp_vec) {
+                for (size_t i = 0; i < sample_vec.size(); ++i) {
+                    out << sample_vec[i];
+                    if (i != sample_vec.size() - 1)
+                        out << delimiter;
+                }
+                out << '\n';  // new line for each innermost vector
+            }
+        }
+    }
+
+    out.close();
+    std::cout << "✅ BGEN results written to: " << filename << '\n';
 }

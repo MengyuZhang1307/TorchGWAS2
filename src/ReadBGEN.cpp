@@ -1,6 +1,6 @@
-#pragma once
 #include "ReadBGEN.h"
-
+#include "../thirdparty/zstd-1.5.5/lib/zstd.h"
+#include "../thirdparty/libdeflate-1.18/libdeflate.h"
 
 /**************************************
 This function is revised based on the Parse function in BOLT-LMM v2.3 source code
@@ -136,7 +136,7 @@ This function is revised based on the Parse function in BOLT-LMM v2.3 source cod
 ***********************************************************************************/
 
 // This functions reads the sample block of BGEN v1.1, v1.2, and v1.3. Also finds which samples to remove if they have missing values in the pheno file.
-void Bgen::processBgenSampleBlock(Bgen bgen, char samplefile[300], bool useSample, UMap_str_VV_string phenomap, std::string phenoMissingKey, int numSelCol, int samSize) 
+void Bgen::processBgenSampleBlock(Bgen bgen, const char samplefile[300], bool useSample, UMap_str_VV_string phenomap, std::string phenoMissingKey, int numSelCol, int samSize) 
 {
     int k = 0;
     std::unordered_set<int> genoUnMatchID;
@@ -414,9 +414,8 @@ This function contains code that is revised based on BOLT-LMM v2.3 source code
 
 // This function reads just the variant block for BGEN files version v1.1, v1.2, and v1.3 and is used to grab the byte where the variant begins.
 //    Necesary when there's no bgen index file.
-void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeVariantFile, bool doFilters) {
-
-
+void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeVariantFile, bool doFilters) 
+{
     int count = 0;
     uint CompressedSNPBlocks = bgen.CompressedSNPBlocks;
     uint Layout = bgen.Layout;
@@ -432,7 +431,7 @@ void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeV
     char* allele0 = new char[maxLA + 1];
     std::string IDline;
 
-    extTypes::StringSet includeVariant;
+    Set_string includeVariant;
     std::vector<std::vector<uint>> includeVariantIndex;
     bool checkSNPID = false;
     bool checkRSID = false;
@@ -441,7 +440,6 @@ void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeV
 
     if (doFilters) 
     {
-
         filterVariants = true;
         if (!includeVariantFile.empty()) 
         {
@@ -678,7 +676,7 @@ void Bgen::getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeV
         }
         Mbgen_begin[threads-1] = floor((Mbgen / threads) * (threads - 1));
         Mbgen_end[threads-1] = Mbgen - 1;
-
+        
         uint t = 0;
         FILE* fin = bgen.fin;
         fseek(fin, offset + 4, SEEK_SET);
@@ -819,14 +817,15 @@ void Bgen13GetTwoVals(const unsigned char* prob_start, uint32_t bit_precision, u
 
 }
 
+
 /***********************************************************************************
 calcDosage function return dosage of genotype
 ************************************************************************************/
 
-std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snps, int thread_num, double sigma2, Bgen bgen) 
+VVV_float calcDosage(std::string bgenFile, int stream_snps, int thread_num, Bgen bgen) 
 {
     auto start_time = std::chrono::high_resolution_clock::now();
-    std::vector<std::vector<float>> dosages;
+    VVV_float dosage_hdr;
     uint maxLA = 65536;
     char* snpID   = new char[maxLA + 1];
     char* rsID    = new char[maxLA + 1];
@@ -856,7 +855,7 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
     bool filterVariants = bgen.filterVariants;
     int samSize = bgen.new_samSize;
     std::vector<long int> include_idx = bgen.include_idx;
-    std::vector<uint> keepVariants = bgen.keepVariants[thread_num];
+    // std::vector<uint> keepVariants = bgen.keepVariants[thread_num];
     uint snploop = bgen.Mbgen_begin[thread_num], end = bgen.Mbgen_end[thread_num];
 
     struct libdeflate_decompressor* decompressor = libdeflate_alloc_decompressor();
@@ -871,11 +870,12 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
     int ret;
     while (snploop <= end) 
     {
+        VV_float dosage_snps;
         int stream_i = 0;
-        std::vector<float> dosageList;  
         
         while (stream_i < stream_snps) //This version only suport stream_snps==1
         {
+            std::vector<float> dosages;  
             if (snploop == (end + 1) && stream_i == 0) 
             {
                 break;
@@ -977,7 +977,7 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
                         else {
                             double pTot = p11 + p10 + p00;
                             double dosage = (2 * p00 + p10) / pTot;
-                            dosageList.push_back(dosage);
+                            dosages.push_back(dosage);
                         }
 
                         idx_k++;
@@ -991,7 +991,7 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
                 uint zLen; 
                 ret = fread(&zLen, 4, 1, fin3);
 
-                if (filterVariants && keepVariants[keepIndex] + 1 != snploop) {
+                if (filterVariants && bgen.keepVariants[thread_num][keepIndex] + 1 != snploop) {
                     CompressedSNPBlocks > 0 ? fseek(fin3, 4 + zLen - 4, SEEK_CUR) : fseek(fin3, zLen, SEEK_CUR);
                     continue;
                 }
@@ -1033,7 +1033,6 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
                     ret = fread(&zBuf[0], 1, zLen, fin3);
                     bufAt = &zBuf[0];
                 }
-
 
                 uint32_t N; 
                 memcpy(&N, bufAt, sizeof(int32_t));
@@ -1120,7 +1119,7 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
                             double p11 = numer_aa / double(1.0 * (numer_mask));
                             double p10 = numer_ab / double(1.0 * (numer_mask));
                             double dosage = 2 * (1 - p11 - p10) + p10;
-                            dosageList.push_back(dosage);
+                            dosages.push_back(dosage);
                             idx_k++;
                         }
                     }
@@ -1160,7 +1159,7 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
                             double p11 = numer_aa / double(1.0 * (numer_mask));
                             double p10 = numer_ab / double(1.0 * (numer_mask));
                             double dosage = 2 - (p11 + p10);
-                            dosageList.push_back(dosage);
+                            dosages.push_back(dosage);
                             idx_k++;
                         }
                     }
@@ -1170,13 +1169,14 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
             variant_index++;
             stream_i++;
             keepIndex++;
+            dosage_snps.emplace_back(dosages);
         } // end of stream_i
 
         if ((snploop == (end + 1)) & (stream_i == 0)) 
         {
             break;
         }  
-        dosages.emplace_back(dosageList);
+        dosage_hdr.emplace_back(dosage_snps);
     } // end of snploop 
 
 
@@ -1193,6 +1193,6 @@ std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snp
 
     auto end_time = std::chrono::high_resolution_clock::now();
     std::cout << "Thread " << thread_num << " finished in ";
+    return dosage_hdr;
     // printExecutionTime1(start_time, end_time);
 }
-

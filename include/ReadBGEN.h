@@ -1,7 +1,7 @@
 #pragma once
-#include <libdeflate.h>
-// #include <zlib.h>
-#include <zstd.h>
+#include "../thirdparty/zstd-1.5.5/lib/zstd.h"
+#include "../thirdparty/libdeflate-1.18/libdeflate.h"
+#include "zlib.h"
 #include "ReadFiles.h"
 
 class Bgen 
@@ -49,12 +49,13 @@ class Bgen
         std::vector<std::vector<uint32_t> > keepVariants;
 
         void processBgenHeaderBlock(std::string bgenfile);
-        void processBgenSampleBlock(Bgen bgen, char samplefile[300], bool useSample, UMap_str_VV_string phenomap, std::string phenoMissingKey, int numSelCol, int samSize);
-        void getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeVariantFile, bool doFilters);
+        void processBgenSampleBlock(Bgen bgen, const char sample_file[300], bool use_sample, UMap_str_VV_string phenomap, std::string pheno_missing_key, int numSelCol, int sam_size);
+        void getPositionOfBgenVariant(Bgen bgen, int threads, std::string includeVariantFile, bool do_filters);
 };
 
 // void gemBGEN(int thread_num, double sigma2, double* resid, double* XinvXTX, vector<double> miu, BinE binE, Bgen bgen, CommandLine cmd);
 void Bgen13GetTwoVals(const unsigned char* prob_start, uint32_t bit_precision, uintptr_t offset, uintptr_t* first_val_ptr, uintptr_t* second_val_ptr);
-std::vector<std::vector<float>>  calcDosage(std::string bgenFile, int stream_snps, int thread_num, Bgen bgen);
+VVV_float  calcDosage(std::string bgenFile, int stream_snps, int thread_num, Bgen bgen);
+
 
 

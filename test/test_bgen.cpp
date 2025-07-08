@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "../ReadBGEN.h" 
-#include "../ReadFiles.h"
+#include "../include/ReadBGEN.h" 
+#include "../include/ReadFiles.h"
 
 // Optional: mock data helpers
 // std::string write_temp_file(const std::string& content, const std::string& filename) {
@@ -12,7 +12,7 @@
 
 // Test getOptions
 TEST(GEMOptionsTest, ParsesCorrectly) {
-    char* argv[] = {
+    const char* argv[] = {
         "program",
         "pheno.txt", "cov.txt", "bgen.bgen", "sample.sample",
         "eid", "sex, coll", "-9", "out.txt", "4",
@@ -22,7 +22,7 @@ TEST(GEMOptionsTest, ParsesCorrectly) {
     int argc = sizeof(argv) / sizeof(argv[0]);
 
     GEMOptions opt = getOptions(argc, argv);
-    EXPECT_EQ(opt.phenoFile, "pheno.txt");
+    EXPECT_EQ(opt.pheno_file, "pheno.txt");
     EXPECT_EQ(opt.threads, 4);
     EXPECT_EQ(opt.delim_cov, '\t');
     EXPECT_EQ(opt.covariates.size(), 2);
