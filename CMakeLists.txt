@@ -40,11 +40,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(pybind11)
 # Set executable for Python module ================================
 set(SRC_PY src/ReadFiles.cpp
-        src/PyInterface.cpp
-        src/main.cpp
-        src/RunPipeline.cpp
-        ${CC_SOURCES} ${C_SOURCES})
+                src/ReadBGEN.cpp
+                src/PyInterface.cpp
+                src/RunPipeline.cpp
+                ${CC_SOURCES} ${C_SOURCES})
 add_library(Mygen MODULE ${SRC_PY})
 target_link_libraries(Mygen PRIVATE pybind11::module)
+set_target_properties(Mygen PROPERTIES PREFIX "")
+
 # Set compiler optimization flags 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")

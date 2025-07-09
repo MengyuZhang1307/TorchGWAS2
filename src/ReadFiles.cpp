@@ -65,6 +65,7 @@ CovariateReadResult read_covariate_data(
     CovariateReadResult result;
     bool& cov_is_duplicated = result.cov_is_duplicated;
     cov_is_duplicated = false;
+
     int numExpSelCol = exp_cov_sel_headers_name.size();
     int numIntSelCol = int_cov_sel_headers_name.size();
 
@@ -143,7 +144,8 @@ CovariateReadResult read_covariate_data(
             cov_is_duplicated = true;
 
         std::vector<std::string> entry;
-        for (int c : colSelVec) {
+        for (int c : colSelVec) 
+        {
             std::string val = values[c];
             val.erase(std::remove(val.begin(), val.end(), '"'), val.end());
             entry.push_back(val);

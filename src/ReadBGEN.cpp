@@ -141,7 +141,8 @@ void Bgen::processBgenSampleBlock(Bgen bgen, const char samplefile[300], bool us
     std::vector<std::string> tempID;
     new_phenodata.resize(samSize);
     std::vector<double> new_covdata_orig(samSize * (numSelCol+1));
-    if ((bgen.SampleIdentifiers == 0) || useSample) {
+    if ((bgen.SampleIdentifiers == 0) || useSample) 
+    {
         if (bgen.SampleIdentifiers == 0 && !useSample) {
             std::cerr << "\nERROR: BGEN file does not contain sample identifiers. A .sample file is required. \n"
                 << "       See https://www.well.ox.ac.uk/~gav/qctool/documentation/sample_file_formats.html for .sample file format. \n\n";
@@ -173,7 +174,8 @@ void Bgen::processBgenSampleBlock(Bgen bgen, const char samplefile[300], bool us
             getline(fIDMat, IDline);
         }
 
-        for (uint m = 0; m < bgen.Nbgen; m++) {
+        for (uint m = 0; m < bgen.Nbgen; m++) 
+        {
             // IDMatching
             getline(fIDMat, IDline);
             std::istringstream iss(IDline);
@@ -181,7 +183,6 @@ void Bgen::processBgenSampleBlock(Bgen bgen, const char samplefile[300], bool us
             iss >> strtmp;
             //AllsampleIDs before matching
             sampleID_all.push_back(strtmp);
-
             int itmp = k;
             
             if (phenomap.find(strtmp) != phenomap.end()) 
@@ -194,16 +195,16 @@ void Bgen::processBgenSampleBlock(Bgen bgen, const char samplefile[300], bool us
                         find(tmp_valvec.begin(), tmp_valvec.end(), "") == tmp_valvec.end()) 
                     {     
                         sscanf(tmp_valvec[0].c_str(), "%lf", &new_phenodata[k]);
-                        new_covdata_orig[k * (numSelCol + 1)] = 1.0;
+                        new_covdata_orig[k * (numSelCol)] = 1.0;
                         for (int c = 0; c < numSelCol; c++) 
                         {
-                            sscanf(tmp_valvec[c + 1].c_str(), "%lf", &new_covdata_orig[k * (numSelCol + 1) + c + 1]);
+                            sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol) + c]);
                         }
                         sampleID.push_back(strtmp);
                         k++;
                     }
                 }
-            }
+            } 
             // save the index with unmatched ID into genoUnMatchID.
             if (itmp == k) 
             {
@@ -259,16 +260,17 @@ void Bgen::processBgenSampleBlock(Bgen bgen, const char samplefile[300], bool us
             {
                 auto& tmp_valvecs = phenomap[strtmp]; 
 
-                for (const auto& tmp_valvec : tmp_valvecs) {
+                for (const auto& tmp_valvec : tmp_valvecs) 
+                {
                     // Check for missing phenotype values in the current vector
                     if (find(tmp_valvec.begin(), tmp_valvec.end(), phenoMissingKey) == tmp_valvec.end() &&
                         find(tmp_valvec.begin(), tmp_valvec.end(), "") == tmp_valvec.end()) 
                     {     
                         sscanf(tmp_valvec[0].c_str(), "%lf", &new_phenodata[k]);
-                        new_covdata_orig[k * (numSelCol + 1)] = 1.0;
+                        new_covdata_orig[k * (numSelCol)] = 1.0;
                         for (int c = 0; c < numSelCol; c++) 
                         {
-                            sscanf(tmp_valvec[c + 1].c_str(), "%lf", &new_covdata_orig[k * (numSelCol + 1) + c + 1]);
+                            sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol) + c]);
                         }
                         sampleID.push_back(strtmp);
                         k++;
