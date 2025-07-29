@@ -1,3 +1,5 @@
+#to run on server $HOME/local/python3.11/bin/python3 Bgen.py or python3 Bgen.py 
+
 import sys
 #Set path
 sys.path.append("build")  
