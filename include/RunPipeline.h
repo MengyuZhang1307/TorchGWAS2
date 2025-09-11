@@ -1,0 +1,33 @@
+#pragma once
+#include "ReadBGEN.h"
+#include "FitNullModel.h" 
+// #include "ParallelFileReader.h"
+
+
+class GEMRunner 
+{
+private:
+    // Internal helpers
+    CovariateReadResult read_covariate_data() ;
+    void process_phenotype_file();     
+    void clean_covMap_by_invalid_indices();
+    
+    public:
+    // Options passed by user
+    GEMOptions opt;
+    Bgen bgen;
+    std::ext::V_string bgen_sample_id;
+    // Covariates and phenotype data
+    CovariateReadResult shared_cov_result;
+    std::set<int> shared_pheno_valid_indices;
+    std::ext::V_string shared_colnames;
+    std::ext::VV_string shared_phenotype_data;
+    bool kin_flag = false;
+    std::string genofile_type; //To be filled by geno_file_type
+    std::ext::V_double c2_values;
+    // Constructor
+    explicit GEMRunner(const GEMOptions& user_opt);
+    void find_genofile_type();
+    void run_fit_nullmodel(); 
+    void check_kinship_usage();
+};
