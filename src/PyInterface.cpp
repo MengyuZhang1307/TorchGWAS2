@@ -4,7 +4,10 @@
 #include <pybind11/numpy.h>
 #include <memory>
 #include <thread>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>     
 
+namespace py = pybind11;
 // Lightweight Python-visible wrapper around the internal queue
 struct DosageStream {
     std::shared_ptr<BoundedChunkQueue> q;

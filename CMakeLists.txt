@@ -9,6 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 project(GEM)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include(FetchContent)
+
+set(FETCHCONTENT_BASE_DIR /data/ssalehinasab/cmake_deps)
+
 file(GLOB SRC "src/*.cpp")
 file(GLOB CC_SOURCES "thirdparty/plink-2.0/*.cc")
 file(GLOB C_SOURCES 
@@ -86,8 +89,10 @@ endif()
 # )
 # FetchContent_MakeAvailable(Boost)
 
-#find Boost=================================================================
+set(BOOST_ROOT /data/ssalehinasab/boost_1_74_0_install)
+set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost 1.74.0 REQUIRED COMPONENTS program_options thread system filesystem)
+
 include_directories(${Boost_INCLUDE_DIRS})
 #find BLAS/LAPACK=================================================================
 # message(STATUS "Setting BLAS vendor to Intel10_64lp.")
@@ -95,7 +100,8 @@ include_directories(${Boost_INCLUDE_DIRS})
 # find_package(BLAS REQUIRED)
 # find_package(LAPACK REQUIRED)
 #Set MKL=================================================================
-set(MKLROOT "/opt/intel/compilers_and_libraries_2020.2.254/linux/mkl")
+#set(MKLROOT "data/ssalehinasab/l_onemklbench_p_2025.2.0_532/mkl")
+set(MKLROOT "/data/ssalehinasab/intel/mkl/latest")
 message("MKLROOT: ${MKLROOT}")
 
 # Specify include directories for MKL
@@ -114,44 +120,82 @@ add_definitions(-DARMA_USE_LAPACK -DARMA_USE_BLAS -DARMA_DONT_USE_WRAPPER)
 message(STATUS "Defining EIGEN_USE_MKL_ALL for Eigen  and Armadillo libraries.")
 
 # Set MKL libraries
-set(MKL_LIBRARIES 
-    mkl_intel_lp64       
-    mkl_sequential    
-    mkl_core  
-    mkl_def
-    mkl_vml_def
+set(MKL_LIBRARIES
+    ${MKLROOT}/lib/intel64/libmkl_intel_lp64.so
+    ${MKLROOT}/lib/intel64/libmkl_sequential.so
+    ${MKLROOT}/lib/intel64/libmkl_core.so
     pthread
     m
     dl
 )
 
+# Tell CMake that BLAS/LAPACK = MKL
+set(BLAS_LIBRARIES ${MKL_LIBRARIES})
+set(LAPACK_LIBRARIES ${MKL_LIBRARIES})
+
+message(STATUS "Using MKL for BLAS/LAPACK: ${MKL_LIBRARIES}")
+
+
+#GMP=================================================================
+# GMP and MPFR (installed locally under /data/ssalehinasab/local)
+# GMP
+set(GMP_INCLUDE_DIR /data/ssalehinasab/local/include CACHE PATH "Path to GMP headers")
+set(GMP_LIBRARY /data/ssalehinasab/local/lib/libgmp.so CACHE FILEPATH "Path to GMP shared library")
+set(GMP_LIBRARIES ${GMP_LIBRARY} CACHE FILEPATH "For compatibility")
+set(GMP_STATIC /data/ssalehinasab/local/lib/libgmp.a CACHE FILEPATH "Path to GMP static library")
+
+# MPFR
+set(MPFR_INCLUDE_DIR /data/ssalehinasab/local/include CACHE PATH "Path to MPFR headers")
+set(MPFR_LIBRARY /data/ssalehinasab/local/lib/libmpfr.so CACHE FILEPATH "Path to MPFR shared library")
+set(MPFR_LIBRARIES ${MPFR_LIBRARY} CACHE FILEPATH "For compatibility")
+set(MPFR_STATIC /data/ssalehinasab/local/lib/libmpfr.a CACHE FILEPATH "Path to MPFR static library")
+
+include_directories(${GMP_INCLUDE_DIR} ${MPFR_INCLUDE_DIR})
+
+
+message(STATUS "Using GMP include dir: ${GMP_INCLUDE_DIR}")
+message(STATUS "Using GMP library: ${GMP_LIBRARIES}")
+message(STATUS "Using MPFR include dir: ${MPFR_INCLUDE_DIR}")
+message(STATUS "Using MPFR library: ${MPFR_LIBRARIES}")
 
 #SuiteSparse=================================================================
-#If SuiteSparse is installed in default directory uncomment below line and comment all the lines related to the SuiteSparse
-#find_package(SuiteSparse REQUIRED)
-# Define SuiteSparse installation directory
-# Include the SuiteSparse headers compiled with suitesparse_7.6.0_no_omp replace your path
-include_directories("/home/ssalehinasab/local/suitesparse_7.6.0_no_omp/include/suitesparse/")
+# --- SuiteSparse (link exported targets; no install needed) -------------------
 
-# Link the SuiteSparse libraries
-link_directories("/home/ssalehinasab/local/suitesparse_7.6.0_no_omp/lib64")
+FetchContent_Declare(
+  suitesparse
+  GIT_REPOSITORY https://github.com/DrTimothyAldenDavis/SuiteSparse.git
+  GIT_TAG v7.8.2
+)
+FetchContent_MakeAvailable(suitesparse)
 
-# Add the SuiteSparse libraries to the target
 set(SUITESPARSE_LIBRARIES
-    libcholmod.a 
-    libcxsparse.a
-    libspqr.a 
-    libumfpack.a 
-    libcamd.a 
-    libccolamd.a 
-    libcolamd.a 
-    libamd.a 
-    libsuitesparseconfig.a 
+    ${suitesparse_BINARY_DIR}/CHOLMOD/libcholmod.a
+    ${suitesparse_BINARY_DIR}/CXSparse/libcxsparse.a
+    ${suitesparse_BINARY_DIR}/SPQR/libspqr.a
+    ${suitesparse_BINARY_DIR}/UMFPACK/libumfpack.a
+    ${suitesparse_BINARY_DIR}/CAMD/libcamd.a
+    ${suitesparse_BINARY_DIR}/CCOLAMD/libccolamd.a
+    ${suitesparse_BINARY_DIR}/COLAMD/libcolamd.a
+    ${suitesparse_BINARY_DIR}/AMD/libamd.a
+    ${suitesparse_BINARY_DIR}/SuiteSparse_config/libsuitesparseconfig.a
 )
 
 # Set executable for Python module ================================
 set(SOURCES ${SRC} ${CC_SOURCES} ${C_SOURCES})
 add_library(Mygen MODULE ${SOURCES})
+
+target_include_directories(Mygen PRIVATE
+    ${suitesparse_SOURCE_DIR}/CHOLMOD/Include
+    ${suitesparse_SOURCE_DIR}/CXSparse/Include
+    ${suitesparse_SOURCE_DIR}/SPQR/Include
+    ${suitesparse_SOURCE_DIR}/UMFPACK/Include
+    ${suitesparse_SOURCE_DIR}/CAMD/Include
+    ${suitesparse_SOURCE_DIR}/CCOLAMD/Include
+    ${suitesparse_SOURCE_DIR}/COLAMD/Include
+    ${suitesparse_SOURCE_DIR}/AMD/Include
+    ${suitesparse_SOURCE_DIR}/SuiteSparse_config
+)
+
 target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")
 target_link_libraries(Mygen PRIVATE pybind11::module

@@ -1,5 +1,3 @@
+build1/
 build/
-.vscode/
-workspace.code-workspace
-.DS_Store
-out*.*
+build*

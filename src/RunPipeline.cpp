@@ -265,7 +265,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
                 std::cout << "         This may be a categorical variable with multiple levels.\n";
                 std::cout << "         RECOMMENDATION: Convert to one-hot encoding if nominal categorical.\n";
                 std::cout << "         For " << unique_count << " categories, create " << (unique_count - 1) << " dummy variables.\n";
-            
+            }           
             std::cout << "\n";
         }
     }
