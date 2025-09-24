@@ -136,13 +136,13 @@ void NullModel::process_gmmat(const std::ext::V_string& column_names,
  
 void NullModel::fit_nullmodel(bool kin_flag,
         std::ext::V_string& bgen_sample_id,
-        CovariateReadResult& shared_cov_result,
+        bool dup_id,
         std::set<int>& shared_pheno_valid_indices,
         std::ext::V_string& shared_colnames,
         std::ext::VV_string& shared_phenotype_data,
         std::ext::V_double& c2_out)
 {
-    if (kin_flag || shared_cov_result.cov_is_duplicated)
+    if (kin_flag || dup_id)
     {
         auto start_time_gmmat = std::chrono::high_resolution_clock::now();
         vector <string> cov_headers(opt.covariates);

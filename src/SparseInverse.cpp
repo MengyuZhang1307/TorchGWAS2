@@ -157,7 +157,7 @@ std::ext::VecTuples4spmat SparseInverse::create_tuple4spmat()
 {
     std::ext::VecTuples4spmat vt4spmat;
     auto path = cov.get_path();
-    cov.read_file(path, cov_delim);
+    cov.read_file(path, cov_delim, cov.m_v_hdrs);
     //Match with phenofile missing value
     fmt::println("Number of observation in cov file before matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
     std::ext::V_int pheno_valid_indices(cov.m_pheno_valid_indices.begin(), cov.m_pheno_valid_indices.end());

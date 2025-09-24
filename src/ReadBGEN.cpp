@@ -753,7 +753,7 @@ void Bgen::get_position_bgen_variant(int threads, std::string includeVariantFile
             endIndex[t] = ((t + 1) == threads) ? nSNPS - 1 : floor(((nSNPS / threads) * (t + 1)) - 1);
         }
 
-    FILE* fin = this->fin;
+        FILE* fin = this->fin;
         fseek(fin, offset + 4, SEEK_SET);
 
         for (uint snploop = 0; snploop < Mbgen; snploop++) 

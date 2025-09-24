@@ -21,22 +21,22 @@ class NullModel
         GEMOptions opt;
         
     public:
-        explicit NullModel(const GEMOptions& user_opt);
+        explicit NullModel(GEMOptions const& user_opt);
         void fit_nullmodel(bool kin_flag,
             std::ext::V_string& bgen_sample_id,
-            CovariateReadResult& shared_cov_result,
+            bool dup_id,
             std::set<int>& shared_pheno_valid_indices,
             std::ext::V_string& shared_colnames,
             std::ext::VV_string& shared_phenotype_data,
             std::ext::V_double& c2_out);
-        void process_gmmat(const std::ext::V_string& column_names,
-            const std::ext::VV_string& phenotype_data,
+        void process_gmmat(std::ext::V_string const& column_names,
+            std::ext::VV_string const& phenotype_data,
             int num_threads,
             SparseInverse& sp,
-            const std::ext::FitNull_f& fitNullModel2,
-            const std::ext::V_string& covariates,
-            const std::string& random_slope_header_name,
-            const std::string& output,
+            std::ext::FitNull_f const& fitNullModel2,
+            std::ext::V_string const& covariates,
+            std::string const& random_slope_header_name,
+            std::string const& output,
             std::ext::V_double& c2_out);
         void print_res(std::string output, std::ext::V_string const& column_names,
             std::ext::V_double const& c2, std::ext::V_string const& id_include,

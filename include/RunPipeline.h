@@ -23,6 +23,7 @@ private:
     std::ext::V_string shared_colnames;
     std::ext::VV_string shared_phenotype_data;
     bool kin_flag = false;
+    bool dup_id = false;
     std::string genofile_type; //To be filled by geno_file_type
     std::ext::V_double c2_values;
     // Constructor

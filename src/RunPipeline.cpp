@@ -18,9 +18,17 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
                                     shared_cov_result.covMap, opt.missing_key, 
                                     shared_cov_result.numSelCol, 
                                     shared_cov_result.samSize);   
-    bgen.get_position_bgen_variant(opt.num_chunks, opt.includeVariantFile,
-                                             opt.do_filters);
+    // bgen.get_position_bgen_variant(opt.num_chunks, opt.includeVariantFile,
+    //                                          opt.do_filters);
     bgen_sample_id = bgen.sampleID;
+    bgen.filterVariants = opt.do_filters;
+    dup_id = shared_cov_result.cov_is_duplicated;
+    // free heavy members
+    shared_cov_result.sampleID_list.clear();
+    shared_cov_result.covMap.clear();
+    shared_cov_result.valid_indices.clear();
+    shared_cov_result.samSize = 0;
+    shared_cov_result.numSelCol = 0;
 }
 
 /**
@@ -486,7 +494,7 @@ void GEMRunner::run_fit_nullmodel()
     NullModel model(opt);
     model.fit_nullmodel(kin_flag,
                         bgen_sample_id,
-                        shared_cov_result,
+                        dup_id,
                         shared_pheno_valid_indices,
                         shared_colnames,
                         shared_phenotype_data,

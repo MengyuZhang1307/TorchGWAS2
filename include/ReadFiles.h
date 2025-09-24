@@ -114,6 +114,8 @@ class DataFrame
          * @param delim : delimeter to separate columns
          */
         void read_file(std::string_view path, char delim = ',');
+        void read_file(std::string_view path, char delim, 
+            std::ext::V_string const& cov_col_names);
         /**
          * @brief Get the whole columns of a given hdr
          * 
@@ -138,6 +140,8 @@ class DataFrame
     private:
         std::ext::V_string read_lines(std::string_view path);
         void fill_data(std::ext::V_string const& v_strs, char delim = ',');
+        void fill_data(std::ext::V_string const& lines, char delim,
+            std::ext::V_string const& cov_col_names);
 };
 
 
