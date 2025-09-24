@@ -55,6 +55,10 @@ if(NOT armadillo_POPULATED)
   FetchContent_Populate(armadillo)
   #add_library(armadillo INTERFACE)
   #target_include_directories(armadillo INTERFACE ${armadillo_SOURCE_DIR}/include)
+  # >>> Disable OpenMP in Armadillo (ADD THESE LINES) <<<
+  set(ARMA_USE_OPENMP OFF CACHE BOOL "Disable OpenMP in Armadillo")
+  add_definitions(-DARMA_DONT_USE_OPENMP)
+  # <<<
   add_subdirectory(${armadillo_SOURCE_DIR} ${armadillo_BINARY_DIR})
 endif()
 # Fetch Eigen=====================================================
@@ -166,6 +170,11 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/DrTimothyAldenDavis/SuiteSparse.git
   GIT_TAG v7.8.2
 )
+set(OPENMP OFF CACHE BOOL "Disable OpenMP in SuiteSparse")
+# Try extra toggles (harmless if they don't exist)
+set(SUITESPARSE_USE_OPENMP OFF CACHE BOOL "")
+set(CHOLMOD_USE_OPENMP OFF CACHE BOOL "")
+set(ENABLE_OPENMP OFF CACHE BOOL "")
 FetchContent_MakeAvailable(suitesparse)
 
 set(SUITESPARSE_LIBRARIES

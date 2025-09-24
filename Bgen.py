@@ -2,8 +2,8 @@
 
 import sys
 #Set path
-sys.path.append("buildupdatebgenreader")  
-# sys.path.append("pymodules")  
+sys.path.append("build")  
+sys.path.append("pymodules")  
 import Mygen
 from pymodules import ConfOpt
 # from torchgwas import run_gwas

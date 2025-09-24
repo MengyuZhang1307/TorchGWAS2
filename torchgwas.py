@@ -3,12 +3,12 @@
 import sys
 import os
 import numpy as np
-# import torch
-# from tqdm import tqdm
+import torch
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
-sys.path.append("buildupdatebgenreader")
+sys.path.append("build")
 sys.path.append("pymodules")
 
 ## function to read corrected residuals and C2
