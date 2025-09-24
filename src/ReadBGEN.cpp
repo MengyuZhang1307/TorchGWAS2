@@ -362,24 +362,24 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
 This function is revised based on the Parse function in BOLT-LMM v2.3 source code
 ***********************************************************************************/
 
-// This functions reads the sample block of BGEN v1.1, v1.2, and v1.3. Also finds which samples to remove if they have missing values in the pheno file.
+// This functions reads the sample block of BGEN v1.1, v1.2, and v1.3. Also finds which samples to remove if they have missing values in the covariate file.
 /**
  * @brief This functions reads the sample block of BGEN v1.1, v1.2, 
- * and v1.3. Also finds which samples to remove if they have missing values in the pheno file.
+ * and v1.3. Also finds which samples to remove if they have missing values in the covariate file.
  * 
  * @param samplefile 
  * @param useSample 
- * @param phenomap 
- * @param phenoMissingKey 
+ * @param covmap 
+ * @param MissingKey 
  * @param numSelCol 
  * @param samSize 
  */
-void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample, std::ext::UMap_str_VV_string phenomap, std::string phenoMissingKey, int numSelCol, int samSize) 
+void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample, std::ext::UMap_str_VV_string covmap, std::string MissingKey, int numSelCol, int samSize) 
 {
     int k = 0;
     std::unordered_set<int> genoUnMatchID;
     std::ext::V_string tempID;
-    new_phenodata.resize(samSize);
+
     std::ext::V_double new_covdata_orig(samSize * (numSelCol+1));
     if ((SampleIdentifiers == 0) || useSample) 
     {
@@ -425,16 +425,15 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
             sampleID_all.push_back(strtmp);
             int itmp = k;
             
-            if (phenomap.find(strtmp) != phenomap.end()) 
+            if (covmap.find(strtmp) != covmap.end()) 
             {
-                auto& tmp_valvecs = phenomap[strtmp]; 
+                auto& tmp_valvecs = covmap[strtmp]; 
 
                 for (const auto& tmp_valvec : tmp_valvecs) {
-                    // Check for missing phenotype values in the current vector
-                    if (find(tmp_valvec.begin(), tmp_valvec.end(), phenoMissingKey) == tmp_valvec.end() &&
+                    // Check for missing covariate values in the current vector
+                    if (find(tmp_valvec.begin(), tmp_valvec.end(), MissingKey) == tmp_valvec.end() &&
                         find(tmp_valvec.begin(), tmp_valvec.end(), "") == tmp_valvec.end()) 
                     {     
-                        sscanf(tmp_valvec[0].c_str(), "%lf", &new_phenodata[k]);
                         new_covdata_orig[k * (numSelCol)] = 1.0;
                         for (int c = 0; c < numSelCol; c++) 
                         {
@@ -496,17 +495,16 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                 tempID.push_back(strtmp);
             }
 
-            if (phenomap.find(strtmp) != phenomap.end()) 
+            if (covmap.find(strtmp) != covmap.end()) 
             {
-                auto& tmp_valvecs = phenomap[strtmp]; 
+                auto& tmp_valvecs = covmap[strtmp]; 
 
                 for (const auto& tmp_valvec : tmp_valvecs) 
                 {
-                    // Check for missing phenotype values in the current vector
-                    if (find(tmp_valvec.begin(), tmp_valvec.end(), phenoMissingKey) == tmp_valvec.end() &&
+                    // Check for missing covariate values in the current vector
+                    if (find(tmp_valvec.begin(), tmp_valvec.end(), MissingKey) == tmp_valvec.end() &&
                         find(tmp_valvec.begin(), tmp_valvec.end(), "") == tmp_valvec.end()) 
                     {     
-                        sscanf(tmp_valvec[0].c_str(), "%lf", &new_phenodata[k]);
                         new_covdata_orig[k * (numSelCol)] = 1.0;
                         for (int c = 0; c < numSelCol; c++) 
                         {
@@ -527,9 +525,8 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
     } // end SampleIdentifiers == 1
 
 
-    // After IDMatching, resizing phenodata and covdata, and updating samSize;
+    // After IDMatching, resizing covdata and covdata, and updating samSize;
 
-    new_phenodata.resize(k);
     new_covdata_orig.resize(k * (numSelCol + 1));
     samSize = k;
 
@@ -551,7 +548,7 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
 
         if (SampleIdentifiers == 0 || useSample) 
         {
-            std::cout << "Check if sample IDs are consistent between the phenotype file and sample file, or check if (--sampleid-name) is specified correctly. \n\n";
+            std::cout << "Check if sample IDs are consistent between the covariate file and sample file, or check if (--sampleid-name) is specified correctly. \n\n";
         }
         exit(1);
     }
@@ -578,7 +575,6 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
             << samSize + genoUnMatchID.size() << " to " << samSize << ".\n\n";
     }
     std::cout << "Sample IDMatching and checking missing values processes have been completed.\n";
-    std:: cout << "New pheno and covariate data vectors with the same order of sample ID sequence of geno data are updated.\n";
     std::cout << "****************************************************************************\n";
 
 

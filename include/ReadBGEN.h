@@ -29,7 +29,6 @@ class Bgen
         //AllsampleIDs before matching
         std::ext::V_string sampleID_all;
         std::ext::V_double  new_covdata;
-        std::ext::V_double new_phenodata;
         std::vector<long int> include_idx;
         std::vector <long int> variant_pos;
         std::vector<unsigned int> includeVariantIndex;
@@ -48,7 +47,7 @@ class Bgen
         std::vector<std::vector<uint32_t> > keepVariants;
 
         void process_bgen_header_block(std::string bgenfile);
-        void process_bgen_sample_block(const char sample_file[300], bool use_sample, std::ext::UMap_str_VV_string phenomap, std::string pheno_missing_key, int numSelCol, int sam_size);
+        void process_bgen_sample_block(const char sample_file[300], bool use_sample, std::ext::UMap_str_VV_string covmap, std::string pheno_missing_key, int numSelCol, int sam_size);
         void get_position_bgen_variant(int threads, std::string includeVariantFile, bool do_filters);
 };
 
