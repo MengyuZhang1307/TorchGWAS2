@@ -3,13 +3,43 @@
 import sys
 import os
 import numpy as np
-import torch
-from tqdm import tqdm
+# import torch
+# from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
-sys.path.append("build-py")
+sys.path.append("buildupdatebgenreader")
 sys.path.append("pymodules")
+
+## function to read corrected residuals and C2
+def read_correction_file(file_path: str):
+    """
+    @brief Read phenotype file with special format.
+
+    @param file_path Path to the correction file.
+    @return (header, c2, data_array)
+        - header: list of strings (column names)
+        - c2: numpy array of double (values from 2nd line after '#')
+        - data_array: numpy 2D array of double (phenotype values)
+    """
+    c2 = np.empty(0, dtype=np.float64)
+    c_res = []
+    
+    with open(file_path, "r") as f:
+        header = f.readline().strip().split("\t")
+        second_line = f.readline().strip().split("\t")
+        if second_line[0].startswith("#"):
+            c2 = [float(val) for val in second_line if not val.startswith("#")]
+                          
+
+        for line in f:
+            parts = line.strip().split("\t")
+            if len(parts) >= 3:
+                c_res.append([float(x) for x in parts[2:]])
+
+    c_res = np.array(c_res, dtype=np.float64)
+
+    return header, c2, c_res
 
 
 def calc_t(pheno_normalized, geno, beta, gamma, sqrt_c2):
