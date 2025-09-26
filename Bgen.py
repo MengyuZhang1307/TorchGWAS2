@@ -1,28 +1,59 @@
 #to run on server $HOME/local/python3.11/bin/python3 Bgen.py or python3 Bgen.py 
 
 import sys
+import pandas as pd
 #Set path
 sys.path.append("build")  
 sys.path.append("pymodules")  
 import Mygen
 from pymodules import ConfOpt
 # from torchgwas import run_gwas
-from torchgwas import read_correction_file
+from torchgwas import read_correction_file, run_gwas
 from Mygen import GEMRunner
 import numpy as np
 import time
+from concurrent.futures import ThreadPoolExecutor
 
+def report_array_info(name, arr):
+    print(f"{name}:")
+    print(f"  shape = {arr.shape}")
+    print(f"  elements = {arr.size:,}")
+    print(f"  memory ≈ {arr.nbytes / 1e6:.2f} MB\n")
+#save results to files
+def save_pheno(i, pheno_name, betas, ses, tstats, pvals):
+    ph_df = pd.DataFrame({
+        "beta": betas[:, i],
+        "se": ses[:, i],
+        "t_stat": tstats[:, i],
+        "p_value": pvals[:, i],
+    })
+    ph_df.to_csv(f"rersults_{pheno_name}.csv", sep="\t", index=False)
+    # df.to_parquet(f"results_{pheno_name}.parquet", engine="pyarrow", compression="zstd")
 
-# function to read corrected residuals and C2
-import numpy as np
+#if we have number of files as threads
+def save_block(start, end, headers, betas, ses, tstats, pvals, block_id):
+    # Build one DataFrame for this block of phenotypes
+    cols = {}
+    for i in range(start, end):
+        ph = headers[i]
+        cols[f"beta_{ph}"]  = betas[:, i]
+        cols[f"se_{ph}"]    = ses[:, i]
+        cols[f"t_stat_{ph}"] = tstats[:, i]
+        cols[f"pval_{ph}"]  = pvals[:, i]
 
+    ph_df = pd.DataFrame(cols)
+    ph_df.to_csv(f"rersults_{block_id}.csv", sep="\t", index=False)
+    # df.to_parquet(f"results_block_{block_id}.parquet", engine="pyarrow", compression="zstd")
 
 start_time = time.time()
 
-opt = ConfOpt(pheno_file = "example/example.pheno2-2id",
-            cov_file = "example/example.cov-2id",
+opt = ConfOpt(pheno_file = "example/example.pheno-2id-repeated",
+            cov_file = "example/example.pheno",
             delim_pheno = ',',
             delim_cov = ',',
+            kin_path = "example/example.kinship",
+            delim_k = ',',
+            kin_diag = 0.5,
             geno_file = "example/example.bgen",
             sample_file = "example/example.sample",
             do_filters = False,
@@ -37,30 +68,50 @@ opt = ConfOpt(pheno_file = "example/example.pheno2-2id",
             missing_key = "NA",
             threads = 5, 
             num_chunks = 5,
-            outfile = "outpy.txt")
+            outfile = "outexample.txt")
+
+# opt = ConfOpt(pheno_file = "example/example.pheno2-2id",
+#             cov_file = "example/example.cov-2id",
+#             delim_pheno = ',',
+#             delim_cov = ',',
+#             geno_file = "example/example.bgen",
+#             sample_file = "example/example.sample",
+#             do_filters = False,
+#             use_sample_file = True,
+#             includeVariantFile = "",
+#             stream_snps = 1,
+#             sampleid_header_name = "sampleid",
+#             random_slope_header_name = "",
+#             covariates = ["cov3"],
+#             exposures = ["cov1"],
+#             interactions = [],
+#             missing_key = "NA",
+#             threads = 5, 
+#             num_chunks = 5,
+#             outfile = "outexample.txt")
 
 # opt = ConfOpt(
-#     pheno_file = "/HGCNT95FS/ADDLIE/Sama-GEM2/TORCH/T2_pheno_QT_repeated",
-#     cov_file = "/HGCNT95FS/ADDLIE/Sama-GEM2/TORCH/T2_covar",
+#     pheno_file = "data/T2_pheno_QT_repeated",
+#     cov_file = "data/T2_covar",
 #     delim_pheno = "\t",
 #     delim_cov = " ",
-#     geno_file = "/HGCNT95FS/ADDLIE/Sama-GEM2/all_filtered.bgen",
-#     sample_file = "/HGCNT95FS/ADDLIE/Sama-GEM2/MRI_samples_chr1.sample",
+#     geno_file = "data/all_filtered.bgen",
+#     sample_file = "data/MRI_samples_chr1.sample",
 #     do_filters = False,
 #     use_sample_file = True,
 #     includeVariantFile = "",
-#     stream_snps = 1000,
+#     stream_snps = 10000,
 #     sampleid_header_name = "IID",
 #     random_slope_header_name = "PC2",
 #     covariates = ["PC1"],
 #     exposures = ["SEX"],
 #     interactions = [],
 #     missing_key = "NA",
-#     kin_path = "/HGCNT95FS/ADDLIE/Sama-GEM2/kinship.txt",
+#     kin_path = "data/kinship.txt",
 #     delim_k = ' ',
 #     kin_diag = 0.5,
-#     threads = 72,
-#     num_chunks = 72,
+#     threads = 90,
+#     num_chunks = 90,
 #     outfile = "outAddlie.txt"
 # )
 
@@ -71,27 +122,57 @@ runner.run_fit_nullmodel()
 
 
 print("Starting streaming dosage decode...")
-# Capacity controls backpressure and is also used by C++ to choose thread count
-queue_capacity = max(1, int(opt.threads))
-snps_per_chunk = max(1, int(opt.stream_snps))
-q = runner.start_dosage_stream(queue_capacity, snps_per_chunk)
+results = run_gwas(runner, snps_per_chunk=1000, device='cuda')
+end_time_gwas = time.time()
+print("End of running Torch GWAS file\n")
+print("Wall time in seconds :", end_time_gwas - start_time)
+##calculate data type change
+start_dconv_time = time.time()
+t_stats = results['t_stats'].cpu().numpy()
+betas = results['beta'].cpu().numpy()
+ses = results['se'].cpu().numpy()
+pvals = results['p_values'].cpu().numpy()
+ph_headers = results['ph_headers'] [2:]  # <-- phenotype names
+end_dconv_time = time.time()
+print("End of data type conversion file\n")
+print("Wall time in seconds :", end_dconv_time - start_dconv_time)
+## calculate size
+report_array_info("t_stats", t_stats)
+report_array_info("betas", betas)
+report_array_info("ses", ses)
+report_array_info("pvals", pvals)
+print("phenos name:", ph_headers)
 
-total_rows = 0
-first_chunk_shape = None
-for chunk in q:
-    if first_chunk_shape is None:
-        first_chunk_shape = chunk.shape
-        print("First chunk shape:", first_chunk_shape)
-        print("First row sample:", chunk[0:1])
-    total_rows += chunk.shape[0]
-print("Total SNP rows streamed:", total_rows)
-end_time = time.time()
-print("End of reading Bgen file\n")
-print("Wall time in seconds :", end_time - start_time)
+# start_writing_time = time.time()
 
-header, c2, c_res = read_correction_file("outpy.txt")
+# # Example: 1280 phenotypes
+# with ThreadPoolExecutor(max_workers=96) as executor:  # adjust threads
+#     for i, pheno_name in enumerate(ph_headers):
+#         executor.submit(save_pheno, i, pheno_name, betas, ses, t_stats, pvals)
 
-print(c_res.shape)    
-print(c_res.ndim)     
-print(c_res.size)
+
+# end_writing_time = time.time()
+# print("End of writing 2 file\n")
+# print("Wall time in seconds :", end_writing_time - start_writing_time)
+
+
+
+
+# Divide columns across threads
+start_writing_time = time.time()
+
+n_pheno = len(ph_headers)
+n_threads = 96
+block_size = (n_pheno + n_threads - 1) // n_threads  # ceil division
+
+with ThreadPoolExecutor(max_workers=n_threads) as executor:
+    for block_id in range(n_threads):
+        start = block_id * block_size
+        end = min((block_id + 1) * block_size, n_pheno)
+        if start < end:  # only submit if block not empty
+            executor.submit(save_block, start, end, ph_headers, betas, ses, t_stats, pvals, block_id)
+end_writing_time = time.time()
+print("End of writing 2 file\n")
+print("Wall time in seconds :", end_writing_time - start_writing_time)
+
 

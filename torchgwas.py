@@ -3,12 +3,12 @@
 import sys
 import os
 import numpy as np
-# import torch
-# from tqdm import tqdm
+import torch
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
-sys.path.append("buildupdatebgenreader")
+sys.path.append("build")
 sys.path.append("pymodules")
 
 ## function to read corrected residuals and C2
@@ -18,9 +18,9 @@ def read_correction_file(file_path: str):
 
     @param file_path Path to the correction file.
     @return (header, c2, data_array)
-        - header: list of strings (column names)
+        - header: list of phenotypes name (column names)
         - c2: numpy array of double (values from 2nd line after '#')
-        - data_array: numpy 2D array of double (phenotype values)
+        - c_res: numpy 2D array of double (corrected residuals values)
     """
     c2 = np.empty(0, dtype=np.float64)
     c_res = []
@@ -43,17 +43,17 @@ def read_correction_file(file_path: str):
     return header, c2, c_res
 
 
-def calc_t(pheno_normalized, geno, beta, gamma, sqrt_c2, ph_std):
+def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
     """
     Compute per-SNP stats using pre-normalized phenotypes and on-device sqrt(c2).
 
-    pheno_normalized: (N, P)
+    corrected_res: (N, P)
     geno: (M, N)
     beta, gamma: (M, P) work buffers on same device as geno
     sqrt_c2_device: (P,) tensor on same device as inputs
     ph_std: (1, P) phenotype stds computed BEFORE standardizing corrected_res
     """
-    N = pheno_normalized.shape[0]
+    N = corrected_res.shape[0]
     with torch.no_grad():
         # Compute stds (keep dims for broadcasting)
         # geno_std: (M, 1) across samples; ph_std: (1, P) provided from pre-standardized corrected_res
@@ -64,7 +64,7 @@ def calc_t(pheno_normalized, geno, beta, gamma, sqrt_c2, ph_std):
         geno.sub_(geno.mean(1, keepdim=True)).div_(geno_std)
 
         # Score U = X^T Y written into beta (M,P); then convert to r = U/N
-        torch.matmul(geno, pheno_normalized, out=beta)  # (M,N) @ (N,P) -> (M,P)
+        torch.matmul(geno, corrected_res, out=beta)  # (M,N) @ (N,P) -> (M,P)
         beta.div_(N)  # now beta holds r (correlation) when inputs are standardized
 
         # Keep an unscaled copy of r for SE(r)
@@ -108,7 +108,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
     #     return
     
     # Get corrected residuals from runner SHOULD GET CORRECTED SCALED RESIDUALS
-    ph_header, c2, corrected_res = read_correction_file("outpy.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("outexample.txt") # read corrected_res, c2 and ph_headers from file
     # corrected_res = torch.from_numpy(runner.get_phenotypes()).float()
 
     #intercept = torch.from_numpy(runner.get_covariates()).float()
@@ -117,17 +117,18 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    
-    corrected_res = corrected_res.to(device)
+
+    # corrected_res = corrected_res.to(device)
+    corrected_res = torch.from_numpy(corrected_res).float().to(device)
     #covariates = covariates.to(device)
     
     n_samples, n_corrected_res = corrected_res.shape
-    
+
     # Center phenotypes with NaN-safe mean and replace NaNs
     #ph_mean = torch.nanmean(phenotypes, dim=0, keepdim=True)
     #phenotypes = phenotypes - ph_mean
     corrected_res = torch.nan_to_num(corrected_res, nan=0.0)
-    
+
     #c = covariates.cpu().numpy()
     #c_mean = np.nanmean(c, axis=0, keepdims=True)
     #c_std = np.nanstd(c, axis=0, keepdims=True)
@@ -148,7 +149,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
     sqrt_c2.sqrt_()
 
     # Start dosage streaming from runner
-    queue = runner.start_dosage_stream(queue_capacity=10, snps_per_chunk=snps_per_chunk)
+    queue = runner.start_dosage_stream(queue_capacity=20, snps_per_chunk=snps_per_chunk)
     
     all_t_stats = []
     all_beta = []
@@ -171,8 +172,10 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
             geno = geno_tensor[:actual_snps, :]
             beta = beta_tensor[:actual_snps, :]
             gamma = gamma_tensor[:actual_snps, :]
-        
-        geno.copy_(chunk_data)
+
+        # geno.copy_(chunk_data)
+        # geno.copy_(torch.from_numpy(chunk_data).float().to(device))
+        geno.copy_(torch.from_numpy(chunk_data).float())
         t_stats, beta_coeffs, se = calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre)
         
         all_t_stats.append(t_stats)
@@ -189,4 +192,5 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
         'beta': beta_coefficients,
         'se': standard_errors,
         'p_values': p_values,
+        'ph_headers': ph_headers,
     }
