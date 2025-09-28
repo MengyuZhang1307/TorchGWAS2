@@ -164,6 +164,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     
 
      # --- Prepare output files ---
+    buffer_snps = 500_000
     out_prefix = "TGWAS"
     def _open(path, mode):
         if compress:
@@ -200,7 +201,8 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
 
         handles.append((start, end, fh))
     
-    snp_index = 0
+    buffer = {fh: [] for _, _, fh in handles}
+    snp_processed = 0
     for chunk_data in tqdm(queue, desc="Processing SNPs"):
             
         actual_snps = chunk_data.shape[0]
@@ -232,7 +234,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
 
         # Write per phenotypes
         for start, end, fh in handles:
-            lines = []
+            block_lines = []
             for r in range(actual_snps):
                 row_vals = []
                 for j in range(start, end):
@@ -240,13 +242,23 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
                     row_vals.append(f"{se_np[r,j]:.6g}")
                     row_vals.append(f"{t_np[r,j]:.6g}")
                     row_vals.append(f"{p_np[r,j]:.6g}")
-                lines.append("\t".join(row_vals) + "\n")
+                block_lines.append("\t".join(row_vals) + "\n")
+            buffer[fh].extend(block_lines)
+
+        snp_processed += actual_snps
+
+        # Flush if buffer full
+        if snp_processed >= buffer_snps:
+            for fh, lines in buffer.items():
+                if lines:
+                    fh.writelines(lines)
+                    buffer[fh] = []  # clear buffer
+            snp_processed = 0
+
+    # --- Final flush ---
+    for fh, lines in buffer.items():
+        if lines:
             fh.writelines(lines)
-
-        snp_index += actual_snps
-
-    # --- Close files
-    for _, _, fh in handles:
         fh.close()
     print(f"Wrote {len(ph_headers)} phenotype files with prefix {out_prefix}_*.tsv{'.gz' if compress else ''}")
     
