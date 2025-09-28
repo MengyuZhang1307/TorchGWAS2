@@ -5,6 +5,8 @@ import os
 import numpy as np
 import torch
 from tqdm import tqdm
+import math
+
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
@@ -91,7 +93,7 @@ def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
         return t_stats, beta_coeffs, se
 
 
-def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
+def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     """
     Run GWAS using a pre-configured GEMRunner instance.
     """
@@ -108,7 +110,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
     #     return
     
     # Get corrected residuals from runner SHOULD GET CORRECTED SCALED RESIDUALS
-    ph_headers, c2_values, corrected_res = read_correction_file("outexample.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("outAddlie.txt") # read corrected_res, c2 and ph_headers from file
     # corrected_res = torch.from_numpy(runner.get_phenotypes()).float()
 
     #intercept = torch.from_numpy(runner.get_covariates()).float()
@@ -160,6 +162,45 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
     beta_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     gamma_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     
+
+     # --- Prepare output files ---
+    out_prefix = "TGWAS"
+    def _open(path, mode):
+        if compress:
+            return gzip.open(path + ".gz", mode + "t")
+        return open(path, mode, buffering=1024*1024)
+
+    handles = {}
+    header_line = "BETA\tSE\tT_STAT\tP_VALUE\n"
+    ph_headers = ph_headers[2:] 
+    n_files = 600
+    n_pheno = len(ph_headers)
+
+    pheno_per_file = math.ceil(n_pheno / n_files)  # auto-calc phenos per file
+
+    # --- Open grouped files ---
+    handles = []
+    for f in range(n_files):
+        start = f * pheno_per_file
+        end   = min((f + 1) * pheno_per_file, n_pheno)
+        if start >= end:
+            break
+        group_headers = ph_headers[start:end]
+
+        # Create file and write header
+        path = f"{out_prefix}_block{f+1}.tsv"
+        fh = _open(path, "w")
+        header_cols = []
+        for ph in group_headers:
+            header_cols.append(f"BETA_{ph}")
+            header_cols.append(f"SE_{ph}")
+            header_cols.append(f"TSTAT_{ph}")
+            header_cols.append(f"PVAL_{ph}")
+        fh.write("\t".join(header_cols) + "\n")
+
+        handles.append((start, end, fh))
+    
+    snp_index = 0
     for chunk_data in tqdm(queue, desc="Processing SNPs"):
             
         actual_snps = chunk_data.shape[0]
@@ -177,20 +218,46 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda'):
         # geno.copy_(torch.from_numpy(chunk_data).float().to(device))
         geno.copy_(torch.from_numpy(chunk_data).float())
         t_stats, beta_coeffs, se = calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre)
-        
-        all_t_stats.append(t_stats)
-        all_beta.append(beta_coeffs)
-        all_se.append(se)
+        pvals = 2 * torch.special.ndtr(t_stats) #added by Sama
+        # all_t_stats.append(t_stats)
+        # all_beta.append(beta_coeffs)
+        # all_se.append(se)
     
-    t_statistics = torch.cat(all_t_stats, dim=0)
-    beta_coefficients = torch.cat(all_beta, dim=0)
-    standard_errors = torch.cat(all_se, dim=0)
-    p_values = 2 * torch.special.ndtr(t_statistics)
+
+    # Convert to numpy
+        t_np   = t_stats.cpu().numpy()
+        b_np   = beta_coeffs.cpu().numpy()
+        se_np  = se.cpu().numpy()
+        p_np   = pvals.cpu().numpy()
+
+        # Write per phenotypes
+        for start, end, fh in handles:
+            lines = []
+            for r in range(actual_snps):
+                row_vals = []
+                for j in range(start, end):
+                    row_vals.append(f"{b_np[r,j]:.6g}")
+                    row_vals.append(f"{se_np[r,j]:.6g}")
+                    row_vals.append(f"{t_np[r,j]:.6g}")
+                    row_vals.append(f"{p_np[r,j]:.6g}")
+                lines.append("\t".join(row_vals) + "\n")
+            fh.writelines(lines)
+
+        snp_index += actual_snps
+
+    # --- Close files
+    for _, _, fh in handles:
+        fh.close()
+    print(f"Wrote {len(ph_headers)} phenotype files with prefix {out_prefix}_*.tsv{'.gz' if compress else ''}")
     
-    return {
-        't_stats': t_statistics,
-        'beta': beta_coefficients,
-        'se': standard_errors,
-        'p_values': p_values,
-        'ph_headers': ph_headers,
-    }
+    # t_statistics = torch.cat(all_t_stats, dim=0)
+    # beta_coefficients = torch.cat(all_beta, dim=0)
+    # standard_errors = torch.cat(all_se, dim=0)
+    # p_values = 2 * torch.special.ndtr(t_statistics)
+    # return {
+    #     't_stats': t_statistics,
+    #     'beta': beta_coefficients,
+    #     'se': standard_errors,
+    #     'p_values': p_values,
+    #     'ph_headers': ph_headers,
+    # }

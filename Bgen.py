@@ -13,6 +13,7 @@ from Mygen import GEMRunner
 import numpy as np
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 def report_array_info(name, arr):
     print(f"{name}:")
@@ -47,28 +48,28 @@ def save_block(start, end, headers, betas, ses, tstats, pvals, block_id):
 
 start_time = time.time()
 
-opt = ConfOpt(pheno_file = "example/example.pheno-2id-repeated",
-            cov_file = "example/example.pheno",
-            delim_pheno = ',',
-            delim_cov = ',',
-            kin_path = "example/example.kinship",
-            delim_k = ',',
-            kin_diag = 0.5,
-            geno_file = "example/example.bgen",
-            sample_file = "example/example.sample",
-            do_filters = False,
-            use_sample_file = True,
-            includeVariantFile = "",
-            stream_snps = 1,
-            sampleid_header_name = "sampleid",
-            random_slope_header_name = "",
-            covariates = ["cov3"],
-            exposures = ["cov1"],
-            interactions = [],
-            missing_key = "NA",
-            threads = 5, 
-            num_chunks = 5,
-            outfile = "outexample.txt")
+# opt = ConfOpt(pheno_file = "example/example.pheno-2id-repeated",
+#             cov_file = "example/example.pheno",
+#             delim_pheno = ',',
+#             delim_cov = ',',
+#             kin_path = "example/example.kinship",
+#             delim_k = ',',
+#             kin_diag = 0.5,
+#             geno_file = "example/example.bgen",
+#             sample_file = "example/example.sample",
+#             do_filters = False,
+#             use_sample_file = True,
+#             includeVariantFile = "",
+#             stream_snps = 1,
+#             sampleid_header_name = "sampleid",
+#             random_slope_header_name = "",
+#             covariates = ["cov3"],
+#             exposures = ["cov1"],
+#             interactions = [],
+#             missing_key = "NA",
+#             threads = 5, 
+#             num_chunks = 5,
+#             outfile = "outexample.txt")
 
 # opt = ConfOpt(pheno_file = "example/example.pheno2-2id",
 #             cov_file = "example/example.cov-2id",
@@ -90,30 +91,30 @@ opt = ConfOpt(pheno_file = "example/example.pheno-2id-repeated",
 #             num_chunks = 5,
 #             outfile = "outexample.txt")
 
-# opt = ConfOpt(
-#     pheno_file = "data/T2_pheno_QT_repeated",
-#     cov_file = "data/T2_covar",
-#     delim_pheno = "\t",
-#     delim_cov = " ",
-#     geno_file = "data/all_filtered.bgen",
-#     sample_file = "data/MRI_samples_chr1.sample",
-#     do_filters = False,
-#     use_sample_file = True,
-#     includeVariantFile = "",
-#     stream_snps = 10000,
-#     sampleid_header_name = "IID",
-#     random_slope_header_name = "PC2",
-#     covariates = ["PC1"],
-#     exposures = ["SEX"],
-#     interactions = [],
-#     missing_key = "NA",
-#     kin_path = "data/kinship.txt",
-#     delim_k = ' ',
-#     kin_diag = 0.5,
-#     threads = 90,
-#     num_chunks = 90,
-#     outfile = "outAddlie.txt"
-# )
+opt = ConfOpt(
+    pheno_file = "data/T2_pheno_QT_repeated",
+    cov_file = "data/T2_covar",
+    delim_pheno = "\t",
+    delim_cov = " ",
+    geno_file = "data/all_filtered.bgen",
+    sample_file = "data/MRI_samples_chr1.sample",
+    do_filters = False,
+    use_sample_file = True,
+    includeVariantFile = "",
+    stream_snps = 10000,
+    sampleid_header_name = "IID",
+    random_slope_header_name = "PC2",
+    covariates = ["PC1"],
+    exposures = ["SEX"],
+    interactions = [],
+    missing_key = "NA",
+    kin_path = "data/kinship.txt",
+    delim_k = ' ',
+    kin_diag = 0.5,
+    threads = 90,
+    num_chunks = 90,
+    outfile = "outAddlie.txt"
+)
 
 runner = GEMRunner(opt.get())
 
@@ -122,26 +123,26 @@ runner.run_fit_nullmodel()
 
 
 print("Starting streaming dosage decode...")
-results = run_gwas(runner, snps_per_chunk=1000, device='cuda')
+run_gwas(runner, snps_per_chunk=1000, device='cuda')
 end_time_gwas = time.time()
 print("End of running Torch GWAS file\n")
 print("Wall time in seconds :", end_time_gwas - start_time)
 ##calculate data type change
-start_dconv_time = time.time()
-t_stats = results['t_stats'].cpu().numpy()
-betas = results['beta'].cpu().numpy()
-ses = results['se'].cpu().numpy()
-pvals = results['p_values'].cpu().numpy()
-ph_headers = results['ph_headers'] [2:]  # <-- phenotype names
-end_dconv_time = time.time()
-print("End of data type conversion file\n")
-print("Wall time in seconds :", end_dconv_time - start_dconv_time)
-## calculate size
-report_array_info("t_stats", t_stats)
-report_array_info("betas", betas)
-report_array_info("ses", ses)
-report_array_info("pvals", pvals)
-print("phenos name:", ph_headers)
+# start_dconv_time = time.time()
+# t_stats = results['t_stats'].cpu().numpy()
+# betas = results['beta'].cpu().numpy()
+# ses = results['se'].cpu().numpy()
+# pvals = results['p_values'].cpu().numpy()
+# ph_headers = results['ph_headers'] [2:]  # <-- phenotype names
+# end_dconv_time = time.time()
+# print("End of data type conversion file\n")
+# print("Wall time in seconds :", end_dconv_time - start_dconv_time)
+# ## calculate size
+# report_array_info("t_stats", t_stats)
+# report_array_info("betas", betas)
+# report_array_info("ses", ses)
+# report_array_info("pvals", pvals)
+# print("phenos name:", ph_headers)
 
 # start_writing_time = time.time()
 
@@ -159,20 +160,29 @@ print("phenos name:", ph_headers)
 
 
 # Divide columns across threads
-start_writing_time = time.time()
+# start_writing_time = time.time()
 
-n_pheno = len(ph_headers)
-n_threads = 96
-block_size = (n_pheno + n_threads - 1) // n_threads  # ceil division
+# n_pheno = len(ph_headers)
+# n_threads = 96
+# n_threads = min(n_threads, n_pheno)
+# block_size = (n_pheno + n_threads - 1) // n_threads  # ceil division
 
-with ThreadPoolExecutor(max_workers=n_threads) as executor:
-    for block_id in range(n_threads):
-        start = block_id * block_size
-        end = min((block_id + 1) * block_size, n_pheno)
-        if start < end:  # only submit if block not empty
-            executor.submit(save_block, start, end, ph_headers, betas, ses, t_stats, pvals, block_id)
-end_writing_time = time.time()
-print("End of writing 2 file\n")
-print("Wall time in seconds :", end_writing_time - start_writing_time)
+# with ThreadPoolExecutor(max_workers=n_threads) as executor:
+#     for block_id in range(n_threads):
+#         start = block_id * block_size
+#         end = min((block_id + 1) * block_size, n_pheno)
+#         if start < end:  # only submit if block not empty
+#             executor.submit(save_block, start, end, ph_headers, betas, ses, t_stats, pvals, block_id)
+
+# with ProcessPoolExecutor(max_workers=48) as executor:  # match physical cores
+#     for block_id in range(n_threads):
+#         start = block_id * block_size
+#         end = min((block_id + 1) * block_size, n_pheno)
+#         if start < end:
+#             executor.submit(save_block, start, end, ph_headers, betas, ses, t_stats, pvals, block_id)
+# end_writing_time = time.time()
+
+# print("End of writing 2 file\n")
+# print("Wall time in seconds :", end_writing_time - start_writing_time)
 
 
