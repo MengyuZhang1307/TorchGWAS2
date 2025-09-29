@@ -164,7 +164,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     
 
      # --- Prepare output files ---
-    buffer_snps = 500_000
+    buffer_snps = 50_000
     out_prefix = "TGWAS"
     def _open(path, mode):
         if compress:
