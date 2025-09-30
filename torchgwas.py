@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import math
+import time
+import pandas as pd
 
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -63,8 +65,9 @@ def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
         ph_std = ph_std.clamp_min(1e-8)
 
         # Row-wise center and scale genotypes using saved std (so we can reuse geno_std later)
-        geno.sub_(geno.mean(1, keepdim=True)).div_(geno_std)
-
+        # geno.sub_(geno.mean(1, keepdim=True)).div_(geno_std)
+        geno_mean = geno.mean(1, keepdim=True)
+        geno.sub_(geno_mean).div_(geno_std)
         # Score U = X^T Y written into beta (M,P); then convert to r = U/N
         torch.matmul(geno, corrected_res, out=beta)  # (M,N) @ (N,P) -> (M,P)
         beta.div_(N)  # now beta holds r (correlation) when inputs are standardized
@@ -90,7 +93,7 @@ def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
         beta_coeffs = beta.cpu()
         se = gamma.cpu()
         t_stats = beta.div_(gamma).abs_().neg_().cpu()
-        return t_stats, beta_coeffs, se
+        return geno_mean, geno_std, t_stats, beta_coeffs, se
 
 
 def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
@@ -153,56 +156,18 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     # Start dosage streaming from runner
     queue = runner.start_dosage_stream(queue_capacity=20, snps_per_chunk=snps_per_chunk)
     
-    all_t_stats = []
-    all_beta = []
-    all_se = []
-    
+    ph_headers = ph_headers[2:]    
     # Preallocate device buffers and reuse/slice for smaller final chunks
     geno_tensor = torch.empty(snps_per_chunk, n_samples, device=device)
     beta_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     gamma_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     
-
-     # --- Prepare output files ---
-    buffer_snps = 50_000
-    out_prefix = "TGWAS"
-    def _open(path, mode):
-        if compress:
-            return gzip.open(path + ".gz", mode + "t")
-        return open(path, mode, buffering=1024*1024)
-
-    handles = {}
-    header_line = "BETA\tSE\tT_STAT\tP_VALUE\n"
-    ph_headers = ph_headers[2:] 
-    n_files = 600
-    n_pheno = len(ph_headers)
-
-    pheno_per_file = math.ceil(n_pheno / n_files)  # auto-calc phenos per file
-
-    # --- Open grouped files ---
-    handles = []
-    for f in range(n_files):
-        start = f * pheno_per_file
-        end   = min((f + 1) * pheno_per_file, n_pheno)
-        if start >= end:
-            break
-        group_headers = ph_headers[start:end]
-
-        # Create file and write header
-        path = f"{out_prefix}_block{f+1}.tsv"
-        fh = _open(path, "w")
-        header_cols = []
-        for ph in group_headers:
-            header_cols.append(f"BETA_{ph}")
-            header_cols.append(f"SE_{ph}")
-            header_cols.append(f"TSTAT_{ph}")
-            header_cols.append(f"PVAL_{ph}")
-        fh.write("\t".join(header_cols) + "\n")
-
-        handles.append((start, end, fh))
-    
-    buffer = {fh: [] for _, _, fh in handles}
-    snp_processed = 0
+    all_beta = []
+    all_se = []
+    all_t = []
+    all_p = []
+    all_mean = []
+    all_std  = []
     for chunk_data in tqdm(queue, desc="Processing SNPs"):
             
         actual_snps = chunk_data.shape[0]
@@ -219,57 +184,53 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
         # geno.copy_(chunk_data)
         # geno.copy_(torch.from_numpy(chunk_data).float().to(device))
         geno.copy_(torch.from_numpy(chunk_data).float())
-        t_stats, beta_coeffs, se = calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre)
-        pvals = 2 * torch.special.ndtr(t_stats) #added by Sama
-        # all_t_stats.append(t_stats)
-        # all_beta.append(beta_coeffs)
-        # all_se.append(se)
-    
+        mean, std, t_stats, beta_coeffs, se = calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre)
+        pvals = 2 * torch.special.ndtr(t_stats) #added by Sam
 
-    # Convert to numpy
-        t_np   = t_stats.cpu().numpy()
+        # # Convert to numpy
+        mean_np = mean.cpu().numpy()
+        std_np = std.cpu().numpy()
         b_np   = beta_coeffs.cpu().numpy()
         se_np  = se.cpu().numpy()
+        t_np   = t_stats.cpu().numpy()
         p_np   = pvals.cpu().numpy()
 
-        # Write per phenotypes
-        for start, end, fh in handles:
-            block_lines = []
-            for r in range(actual_snps):
-                row_vals = []
-                for j in range(start, end):
-                    row_vals.append(f"{b_np[r,j]:.6g}")
-                    row_vals.append(f"{se_np[r,j]:.6g}")
-                    row_vals.append(f"{t_np[r,j]:.6g}")
-                    row_vals.append(f"{p_np[r,j]:.6g}")
-                block_lines.append("\t".join(row_vals) + "\n")
-            buffer[fh].extend(block_lines)
+        all_mean.append(mean_np)
+        all_std.append(std_np)
+        all_beta.append(b_np)
+        all_se.append(se_np)
+        all_t.append(t_np)
+        all_p.append(p_np)
+        
 
-        snp_processed += actual_snps
-
-        # Flush if buffer full
-        if snp_processed >= buffer_snps:
-            for fh, lines in buffer.items():
-                if lines:
-                    fh.writelines(lines)
-                    buffer[fh] = []  # clear buffer
-            snp_processed = 0
-
-    # --- Final flush ---
-    for fh, lines in buffer.items():
-        if lines:
-            fh.writelines(lines)
-        fh.close()
-    print(f"Wrote {len(ph_headers)} phenotype files with prefix {out_prefix}_*.tsv{'.gz' if compress else ''}")
-    
-    # t_statistics = torch.cat(all_t_stats, dim=0)
-    # beta_coefficients = torch.cat(all_beta, dim=0)
-    # standard_errors = torch.cat(all_se, dim=0)
-    # p_values = 2 * torch.special.ndtr(t_statistics)
-    # return {
-    #     't_stats': t_statistics,
-    #     'beta': beta_coefficients,
-    #     'se': standard_errors,
-    #     'p_values': p_values,
-    #     'ph_headers': ph_headers,
-    # }
+    all_beta = np.vstack(all_beta)   # (num_snps, num_pheno)
+    all_se   = np.vstack(all_se)
+    all_t    = np.vstack(all_t)
+    all_p    = np.vstack(all_p)
+    all_mean = np.concatenate(all_mean) if all_mean else np.array([])
+    all_std  = np.concatenate(all_std)  if all_std  else np.array([])
+    all_stats = np.stack([all_beta, all_se, all_t, all_p], axis=2)
+    num_snps, num_pheno = all_beta.shape
+    print("num_snps", num_snps)
+    print("num_pheno", num_pheno)
+    # Flatten phenotypes → shape (num_snps, num_pheno*4)
+    all_stats_2d = all_stats.reshape(num_snps, -1)
+    # Add mean/std at the start → shape (num_snps, 2 + num_pheno*4)
+    final_mat = np.concatenate(
+        [all_mean.reshape(-1, 1), all_std.reshape(-1, 1), all_stats_2d],
+        axis=1
+    )
+    headers = ["snp_mean", "snp_std"]
+    for j in range(len(ph_headers)):
+        headers.extend([f"beta_{j+1}", f"se_{j+1}", f"t_{j+1}", f"pval_{j+1}"])
+    start_time_df = time.time()
+    df = pd.DataFrame(final_mat, columns=headers)
+    end_time_df = time.time()
+    print("Wall time in seconds  for converting to df:", end_time_df - start_time_df)
+    # Save once
+    start_time_save = time.time()
+    df.to_parquet("results_all_ADDLIE.parquet", engine="pyarrow", compression="snappy")
+    end_time_save = time.time()
+    print("Wall time in seconds for saving df:", end_time_save - start_time_save)
+    df = pd.read_parquet("results_all_ADDLIE.parquet", engine="pyarrow")
+    print(df.head())
