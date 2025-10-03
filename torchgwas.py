@@ -8,7 +8,7 @@ from tqdm import tqdm
 import math
 import time
 import pandas as pd
-
+import pyarrow as pa, pyarrow.parquet as pq
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
@@ -168,10 +168,60 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     all_p = []
     all_mean = []
     all_std  = []
-    for chunk_data in tqdm(queue, desc="Processing SNPs"):
+    buffer_size = 500_000
+    buffer = []
+    beta_se_headers = []
+    for ph in ph_headers:
+        beta_se_headers.append(f"{ph}_BETA")
+        beta_se_headers.append(f"{ph}_SE")
+    # for chunk_data in tqdm(queue, desc="Processing SNPs"):
             
-        actual_snps = chunk_data.shape[0]
+    #     actual_snps = chunk_data.shape[0]
         
+    #     if actual_snps == snps_per_chunk:
+    #         geno = geno_tensor
+    #         beta = beta_tensor
+    #         gamma = gamma_tensor
+    #     else:
+    #         geno = geno_tensor[:actual_snps, :]
+    #         beta = beta_tensor[:actual_snps, :]
+    #         gamma = gamma_tensor[:actual_snps, :]
+
+    #     # geno.copy_(chunk_data)
+    #     # geno.copy_(torch.from_numpy(chunk_data).float().to(device))
+    #     geno.copy_(torch.from_numpy(chunk_data).float())
+    #     mean, std, t_stats, beta_coeffs, se = calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre)
+    #     pvals = 2 * torch.special.ndtr(t_stats) #added by Sam
+
+    #     # # Convert to numpy
+    #     # Only keep beta and SE
+    #     b_np = beta_coeffs.cpu().numpy() 
+    #     se_np = se.cpu().numpy() 
+    #     all_stats = np.stack([b_np, se_np], axis=2)       # (S, P, 2)
+    #     all_stats_2d = all_stats.reshape(b_np.shape[0], -1)  # (S, 2*P)
+
+    #     # final_mat = all_stats_2d
+
+    #     buffer.append(all_stats_2d)
+
+    #     if sum(len(x) for x in buffer) >= buffer_size:
+    #         df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
+    #         df.to_csv("results_buffered.csv", mode="a",
+    #                 header=not os.path.exists("results_buffered.csv"),
+    #                 index=False)
+    #         buffer = []
+
+
+    # if buffer:
+    #     df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
+    #     df.to_csv("results_buffered.csv", mode="a", header=not os.path.exists("results_buffered.csv"), index=False)
+  #####using parquet
+    start = time.time()
+    writer = None
+    for chunk_data in tqdm(queue, desc="Processing SNPs"):
+
+        actual_snps = chunk_data.shape[0]
+
         if actual_snps == snps_per_chunk:
             geno = geno_tensor
             beta = beta_tensor
@@ -181,56 +231,56 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
             beta = beta_tensor[:actual_snps, :]
             gamma = gamma_tensor[:actual_snps, :]
 
-        # geno.copy_(chunk_data)
-        # geno.copy_(torch.from_numpy(chunk_data).float().to(device))
         geno.copy_(torch.from_numpy(chunk_data).float())
-        mean, std, t_stats, beta_coeffs, se = calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre)
-        pvals = 2 * torch.special.ndtr(t_stats) #added by Sam
+        mean, std, t_stats, beta_coeffs, se = calc_t(
+            corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre
+        )
 
-        # # Convert to numpy
-        mean_np = mean.cpu().numpy()
-        std_np = std.cpu().numpy()
-        b_np   = beta_coeffs.cpu().numpy()
-        se_np  = se.cpu().numpy()
-        t_np   = t_stats.cpu().numpy()
-        p_np   = pvals.cpu().numpy()
+        # Convert to numpy
+        b_np  = beta_coeffs.cpu().numpy()  # (num_snps, num_pheno)
+        se_np = se.cpu().numpy()           # (num_snps, num_pheno)
 
-        all_mean.append(mean_np)
-        all_std.append(std_np)
-        all_beta.append(b_np)
-        all_se.append(se_np)
-        all_t.append(t_np)
-        all_p.append(p_np)
-        
+        # Stack [beta, se] → shape (num_snps, num_pheno*2)
+        all_stats = np.stack([b_np, se_np], axis=2)
+        all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
 
-    all_beta = np.vstack(all_beta)   # (num_snps, num_pheno)
-    all_se   = np.vstack(all_se)
-    all_t    = np.vstack(all_t)
-    all_p    = np.vstack(all_p)
-    all_mean = np.concatenate(all_mean) if all_mean else np.array([])
-    all_std  = np.concatenate(all_std)  if all_std  else np.array([])
-    all_stats = np.stack([all_beta, all_se, all_t, all_p], axis=2)
-    num_snps, num_pheno = all_beta.shape
-    print("num_snps", num_snps)
-    print("num_pheno", num_pheno)
-    # Flatten phenotypes → shape (num_snps, num_pheno*4)
-    all_stats_2d = all_stats.reshape(num_snps, -1)
-    # Add mean/std at the start → shape (num_snps, 2 + num_pheno*4)
-    final_mat = np.concatenate(
-        [all_mean.reshape(-1, 1), all_std.reshape(-1, 1), all_stats_2d],
-        axis=1
-    )
-    headers = ["snp_mean", "snp_std"]
-    for j in range(len(ph_headers)):
-        headers.extend([f"beta_{j+1}", f"se_{j+1}", f"t_{j+1}", f"pval_{j+1}"])
-    start_time_df = time.time()
-    df = pd.DataFrame(final_mat, columns=headers)
-    end_time_df = time.time()
-    print("Wall time in seconds  for converting to df:", end_time_df - start_time_df)
-    # Save once
-    start_time_save = time.time()
-    df.to_parquet("results_all_ADDLIE.parquet", engine="pyarrow", compression="snappy")
-    end_time_save = time.time()
-    print("Wall time in seconds for saving df:", end_time_save - start_time_save)
-    df = pd.read_parquet("results_all_ADDLIE.parquet", engine="pyarrow")
-    print(df.head())
+        buffer.append(all_stats_2d)
+
+        # Flush when buffer full
+        if sum(len(x) for x in buffer) >= buffer_size:
+            df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
+            table = pa.Table.from_pandas(df)
+
+            if writer is None:
+                writer = pq.ParquetWriter(
+                    "results_buffered.parquet", table.schema, compression="snappy"
+                )
+            writer.write_table(table)
+            buffer = []
+
+
+    # Flush remainder
+    if buffer:
+        df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
+        table = pa.Table.from_pandas(df)
+        if writer is None:
+            writer = pq.ParquetWriter(
+                "results_buffered.parquet", table.schema, compression="snappy"
+            )
+        writer.write_table(table)
+
+    # Close writer
+    if writer:
+        writer.close()
+    
+    end = time.time()
+    print(f"time for chunck = {end - start}")
+
+    #Read the parquet file head
+    df_check = pd.read_parquet("results_buffered.parquet")
+
+    # Show first 5 rows
+    print(df_check.head())
+
+    # Show the column names
+    print(df_check.columns.tolist())
