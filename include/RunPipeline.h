@@ -1,8 +1,20 @@
 #pragma once
 #include "ReadBGEN.h"
 #include "FitNullModel.h" 
-// #include "ParallelFileReader.h"
+#include "GEMConfig.h" 
 
+struct CovariateReadResult
+ {
+    std::ext::V_string sampleID_list;
+    std::ext::UMap_str_VV_string covMap;
+    int samSize;
+    bool cov_is_duplicated;
+    int numSelCol;
+    /**
+     * @brief Indices of lines to keep.
+     */
+    std::ext::V_int valid_indices;
+};
 
 class GEMRunner 
 {

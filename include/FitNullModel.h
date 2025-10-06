@@ -1,7 +1,8 @@
 #pragma once
 #include "GMMAT.h"
 #include "Declars.h"
-#include "ParallelFileReader.h" 
+#include "FileIO.h" 
+#include "GEMConfig.h" 
 #include "MatrixUtils.h"
 #include "ReadBGEN.h"
 #include "TimeUtils.h"
