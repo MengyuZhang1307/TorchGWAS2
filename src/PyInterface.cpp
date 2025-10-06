@@ -40,12 +40,12 @@ PYBIND11_MODULE(Mygen, m)
         )doc";
     py::class_<GEMOptions>(m, "GEMOptions")
         .def(py::init<>())
-        .def_readwrite("pheno_file", &GEMOptions::pheno_file)
-        .def_readwrite("cov_file", &GEMOptions::cov_file)
-        .def_readwrite("delim_pheno", &GEMOptions::delim_pheno)
-        .def_readwrite("delim_cov", &GEMOptions::delim_cov)
-        .def_readwrite("geno_file", &GEMOptions::geno_file)
-        .def_readwrite("sample_file", &GEMOptions::sample_file)
+        .def_readwrite("pheno_add", &GEMOptions::pheno_add)
+        .def_readwrite("cov_add", &GEMOptions::cov_add)
+        .def_readwrite("pheno_delim", &GEMOptions::pheno_delim)
+        .def_readwrite("cov_delim", &GEMOptions::cov_delim)
+        .def_readwrite("geno_add", &GEMOptions::geno_add)
+        .def_readwrite("sample_add", &GEMOptions::sample_add)
         .def_readwrite("do_filters", &GEMOptions::do_filters)
         .def_readwrite("use_sample_file",  &GEMOptions::use_sample_file)
         .def_readwrite("includeVariantFile", &GEMOptions::includeVariantFile)
@@ -56,8 +56,8 @@ PYBIND11_MODULE(Mygen, m)
         .def_readwrite("exposures", &GEMOptions::exposures)
         .def_readwrite("interactions", &GEMOptions::interactions)
         .def_readwrite("missing_key", &GEMOptions::missing_key)
-        .def_readwrite("kin_path", &GEMOptions::kin_path)
-        .def_readwrite("delim_k", &GEMOptions::delim_k)
+        .def_readwrite("kin_add", &GEMOptions::kin_add)
+        .def_readwrite("kin_delim", &GEMOptions::kin_delim)
         .def_readwrite("kin_diag", &GEMOptions::kin_diag)
         .def_readwrite("threads", &GEMOptions::threads)
         .def_readwrite("num_chunks", &GEMOptions::num_chunks)
@@ -88,7 +88,7 @@ PYBIND11_MODULE(Mygen, m)
                     auto q = std::make_shared<BoundedChunkQueue>(queue_capacity);
                     // Copy required state so the thread doesn't depend on GEMRunner lifetime.
                     auto bgen_copy = self.bgen; // shallow copy; calc_dosage opens its own FILE handles
-                    auto geno_file = self.opt.geno_file;
+                    auto geno_file = self.opt.geno_add;
                     std::thread([q, bgen_copy, geno_file, snps_per_chunk]() mutable {
                         calc_dosage(geno_file, bgen_copy, *q, snps_per_chunk);
                     }).detach();
@@ -101,7 +101,7 @@ PYBIND11_MODULE(Mygen, m)
                     int snps_per_chunk = self.opt.stream_snps > 0 ? self.opt.stream_snps : 1000;
                     auto q = std::make_shared<BoundedChunkQueue>(queue_capacity);
                     auto bgen_copy = self.bgen;
-                    auto geno_file = self.opt.geno_file;
+                    auto geno_file = self.opt.geno_add;
                     std::thread([q, bgen_copy, geno_file, snps_per_chunk]() mutable {
                         calc_dosage(geno_file, bgen_copy, *q, snps_per_chunk);
                     }).detach();

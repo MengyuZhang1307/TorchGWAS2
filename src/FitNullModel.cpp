@@ -37,22 +37,26 @@
 
 NullModel::NullModel(const GEMOptions& user_opt): opt(user_opt){}
  
-void NullModel::process_gmmat(const std::ext::V_string& column_names,
-                               const std::ext::VV_string& phenotype_data,
-                               int num_threads,
-                               SparseInverse& sp,
-                               const std::ext::FitNull_f& fitNullModel2,
-                               const std::ext::V_string& covariates,
-                               const std::string& random_slope_header_name,
-                               const std::string& output,
-                               std::ext::V_double& c2_out)
+void NullModel::process_gmmat(const std::string kin_add, 
+                            const std::string cov_add, const char kin_delim, 
+                            const double kin_diag, const char cov_delim, 
+                            const std::string &sampleid_header_name, const std::ext::V_string &cov_headers, 
+                            std::ext::V_string &bgen_sample_id, const std::string missing_key, 
+                            const std::ext::V_string& pheno_column_names,
+                            const std::ext::VV_string& phenotype_data,
+                            std::vector<std::set<int>>& pheno_valid_indices,
+                            int num_threads,
+                            const std::ext::FitNull_f& fitNullModel2,
+                            const std::ext::V_string& covariates,
+                            const std::string& random_slope_header_name,
+                            const std::string& output,
+                            std::ext::V_double& c2_out)
 {
     int col = 0;
-    int num_columns = column_names.size();
+    int num_columns = pheno_column_names.size();
     std::ext::VV_double output_matrix;
     size_t res_size;
     bool sampleid_filled = false;    
-    std::mutex result_mutex;
     std::ext::V_string id_include;
     const int pheno_columns = num_columns - 2;
     const int block_size = (pheno_columns + num_threads - 1) / num_threads;  // ceil division
@@ -62,6 +66,24 @@ void NullModel::process_gmmat(const std::ext::V_string& column_names,
     std::map<std::string, glmmkin_residuals> residual_map;
     std::vector<std::map<std::string, glmmkin_residuals>> thread_local_maps(num_threads);
 
+    Cov cov;
+    cov.m_sam_id_hdr = sampleid_header_name;
+    cov.m_v_hdrs = cov_headers;
+    cov.m_data_frame.m_geno_ids = bgen_sample_id;
+    cov.m_data_frame.m_missing_key = missing_key;
+    cov.set_path(cov_add);
+
+
+    auto path = cov.get_path();
+    cov.read_file(path, cov_delim, cov.m_v_hdrs);
+    //Match genofile sample IDs
+    fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
+    //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
+    cov.m_data_frame.match_genoids(cov.m_sam_id_hdr, cov.m_v_hdrs);
+    fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
+    fmt::println("****************************************************************************");
+    //Map cov sample ids to int to be used as matrix indices
+
     for (int t = 0; t < num_threads; ++t) 
     {
         int start_col = t * block_size;
@@ -70,33 +92,28 @@ void NullModel::process_gmmat(const std::ext::V_string& column_names,
         if (start_col >= end_col) break;  // no more work
 
         threads.emplace_back(
-            [start_col, t, end_col, &fitNullModel2, &phenotype_data,
-            &covariates, &random_slope_header_name, &column_names,
-            &thread_local_maps, &result_mutex, sp]() 
+            [cov_copy = cov, &kin_add, &kin_delim, &kin_diag,
+            &cov_delim, &bgen_sample_id, 
+            &missing_key, start_col, t, end_col, &fitNullModel2, 
+            &phenotype_data, &pheno_valid_indices, &covariates, &random_slope_header_name, 
+            &pheno_column_names, &thread_local_maps] () mutable
             {
                 auto& local_map = thread_local_maps[t];
                 
                 for (int this_col = start_col; this_col < end_col; ++this_col) 
                 {
-                    // auto gmmat = std::make_unique<GMMAT>();
                     GMMAT gmmat;
-                    gmmat.m_vkins_sp = {sp};
-
-                glmmkin_residuals residuals = gmmat.glmmkin_init(
-                        fitNullModel2,
-                        phenotype_data[this_col],
-                        covariates,
-                        random_slope_header_name,
-                        "", "REML", "AI", 500,
-                        1e-5, 1e-5, 1e+5, 10
-                    );
                     
-                    // auto t_end = std::chrono::high_resolution_clock::now();
-                    // double elapsed = std::chrono::duration<double>(t_end - t_start).count();
-                    // std::cout << "Thread number: " << t << "Thread handling cols " << start_col << " to " << end_col - 1 
-                    // << " ran for " << elapsed << " seconds.\n";
-                    // std::lock_guard<std::mutex> lock(result_mutex);
-                    local_map[column_names[this_col + 2]] = std::move(residuals);
+                    glmmkin_residuals residuals = gmmat.glmmkin_init(cov_copy,
+                        kin_add, kin_delim, kin_diag,
+                        cov_delim, bgen_sample_id, 
+                        missing_key, fitNullModel2, phenotype_data[this_col], 
+                        pheno_valid_indices[this_col], 
+                        covariates, random_slope_header_name, "", "REML", "AI",
+                        500, 1e-5, 1e-5, 1e+5, 10
+                    );
+
+                    local_map[pheno_column_names[this_col + 2]] = std::move(residuals);
                 }
             }
         );
@@ -117,30 +134,30 @@ void NullModel::process_gmmat(const std::ext::V_string& column_names,
 
     if (id_include.size() <= 0)
     {
-        id_include = residual_map[column_names[2]].id_include;
+        id_include = residual_map[pheno_column_names[2]].id_include;
     }
     
     std::ext::V_double c2;
     for (int col = 0; col < pheno_columns; ++col) 
     {
-        auto& residual = residual_map[column_names[col + 2]].scaled_residuals_c1;
+        auto& residual = residual_map[pheno_column_names[col + 2]].scaled_residuals_c1;
         output_matrix.emplace_back(std::move(residual));
-        c2.push_back(residual_map[column_names[col + 2]].c2);
+        c2.push_back(residual_map[pheno_column_names[col + 2]].c2);
     }
 
     // Return C2 values
     c2_out = c2;
 
-    print_res(output, column_names, c2, id_include, output_matrix);
+    print_res(output, pheno_column_names, c2, id_include, output_matrix);
 }
 
  
 void NullModel::fit_nullmodel(bool kin_flag,
         std::ext::V_string& bgen_sample_id,
         bool dup_id,
-        std::set<int>& shared_pheno_valid_indices,
-        std::ext::V_string& shared_colnames,
+        std::ext::V_string& shared_pheno_colnames,
         std::ext::VV_string& shared_phenotype_data,
+        std::vector<std::set<int>>& pheno_valid_indices,
         std::ext::V_double& c2_out)
 {
     if (kin_flag || dup_id)
@@ -152,9 +169,17 @@ void NullModel::fit_nullmodel(bool kin_flag,
         {
             cov_headers.insert(cov_headers.end(), opt.random_slope_header_name);
         }           
-        
-        SparseInverse sp(opt.kin_path, opt.cov_file, opt.delim_k, opt.kin_diag, opt.delim_cov, opt.sampleid_header_name, cov_headers, bgen_sample_id, opt.missing_key, shared_pheno_valid_indices); 
-        process_gmmat(shared_colnames, shared_phenotype_data, opt.threads, sp, fitNullModel2, opt.covariates, opt.random_slope_header_name, opt.outfile, c2_out);
+        // SparseInverse sp(opt.kin_add, opt.cov_file, opt.delim_k, 
+        // opt.kin_diag, opt.delim_cov, opt.sampleid_header_name, 
+        // cov_headers, bgen_sample_id, opt.missing_key, 
+        // shared_pheno_valid_indices);
+        process_gmmat(opt.kin_add, opt.cov_add, opt.kin_delim,
+                        opt.kin_diag, opt.cov_delim, opt.sampleid_header_name, 
+                        cov_headers, bgen_sample_id, opt.missing_key,
+                        shared_pheno_colnames, shared_phenotype_data, 
+                        pheno_valid_indices, opt.threads, fitNullModel2, 
+                        opt.covariates, opt.random_slope_header_name, 
+                        opt.outfile, c2_out);
         cout << "\nEnd of association test\n";
         cout << "****************************************************************************\n";
         cout << "calculating the duration of association test...\n";
@@ -457,16 +482,16 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
 
 
 
-void NullModel::print_res(std::string output, std::ext::V_string const& column_names,
+void NullModel::print_res(std::string output, std::ext::V_string const& pheno_column_names,
 std::ext::V_double const& c2, std::ext::V_string const& id_include,
     std::ext::VV_double const& output_matrix)
 {
     std::ofstream out(output);
 
-    for (size_t i = 0; i < column_names.size(); ++i) 
+    for (size_t i = 0; i < pheno_column_names.size(); ++i) 
     {
-        out << column_names[i];
-        if (i != column_names.size() - 1) out << '\t';
+        out << pheno_column_names[i];
+        if (i != pheno_column_names.size() - 1) out << '\t';
     }
 
     out << '\n' << '#' << '\t' << '#';

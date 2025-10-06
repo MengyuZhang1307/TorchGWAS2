@@ -6,7 +6,7 @@ class Cov
 {
     public:
         DataFrame m_data_frame;
-        std::string m_sam_id;
+        std::string m_sam_id_hdr;
         std::ext::V_string m_v_hdrs;
         std::set<int> m_pheno_valid_indices;
 

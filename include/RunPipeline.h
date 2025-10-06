@@ -31,8 +31,8 @@ private:
     std::ext::V_string bgen_sample_id;
     // Covariates and phenotype data
     CovariateReadResult shared_cov_result;
-    std::set<int> shared_pheno_valid_indices;
-    std::ext::V_string shared_colnames;
+    std::vector<std::set<int>> pheno_valid_indices;
+    std::ext::V_string shared_pheno_colnames;
     std::ext::VV_string shared_phenotype_data;
     bool kin_flag = false;
     bool dup_id = false;

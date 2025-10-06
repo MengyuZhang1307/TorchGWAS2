@@ -10,11 +10,9 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
     // Step 2: Read phenotype file
     process_phenotype_file();
 
-    // // Step 3: Clean covariate map based on valid phenotype samples
-    // clean_covMap_by_invalid_indices();
-    // Step 4 run BGEN metods
-    bgen.process_bgen_header_block(opt.geno_file);
-    bgen.process_bgen_sample_block(opt.sample_file.c_str(), opt.use_sample_file, 
+    // Step 3 run BGEN metods
+    bgen.process_bgen_header_block(opt.geno_add);
+    bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
                                     shared_cov_result.covMap, opt.missing_key, 
                                     shared_cov_result.numSelCol, 
                                     shared_cov_result.samSize);   
@@ -39,7 +37,7 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
 
 void GEMRunner::find_genofile_type()
 {
-    std::string ext = fs::path(opt.geno_file).extension().string();
+    std::string ext = fs::path(opt.geno_add).extension().string();
         if (ext == ".bgen") 
         {
             genofile_type = "BGEN";
@@ -64,13 +62,13 @@ void GEMRunner::find_genofile_type()
 /**
  * @brief reade covariate file
  * 
- * @param cov_file 
+ * @param cov_add
  * @param opt.covariates 
  * @param opt.exposures 
  * @param opt.interactions 
  * @param opt.sampleid_header_name 
  * @param opt.random_slope_header_name 
- * @param opt.delim_cov 
+ * @param opt.cov_delim
  * @param opt.missing_key 
  * @return CovariateReadResult: Structure containing parsed data.
  */
@@ -91,7 +89,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
     result.numSelCol = opt.covariates.size() - numExpSelCol - numIntSelCol;
     std::ext::V_int colSelVec(opt.covariates.size());
 
-    std::ifstream fincov(opt.cov_file);
+    std::ifstream fincov(opt.cov_add);
     if (fincov.fail()) 
     {
         throw std::runtime_error("ERROR: Cannot open covariate file");
@@ -102,7 +100,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
     std::getline(fincov, line);
     std::istringstream issHead(line);
     int header_i = 0;
-    while (std::getline(issHead, headerName, opt.delim_cov)) 
+    while (std::getline(issHead, headerName, opt.cov_delim)) 
     {
         headerName.erase(std::remove(headerName.begin(), headerName.end(), '\r'), headerName.end());
         headerName.erase(std::remove(headerName.begin(), headerName.end(), '"'), headerName.end());
@@ -155,7 +153,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
         std::istringstream iss(line);
         std::string value;
         std::ext::V_string values;
-        while (std::getline(iss, value, opt.delim_cov)) values.push_back(value);
+        while (std::getline(iss, value, opt.cov_delim)) values.push_back(value);
 
         if (values.size() == colNames.size() - 1) values.push_back("");
         if (values.size() != colNames.size())
@@ -286,24 +284,25 @@ CovariateReadResult GEMRunner::read_covariate_data()
 /**
  * @brief Read phenotype file
  * 
- * @param opt.pheno_file 
+ * @param opt.pheno_add 
  * @param opt.sampleid_header_name 
  * @param shared_cov_result.sampleID_list 
  * @param valid_indices 
- * @param shared_colnames 
+ * @param shared_pheno_colnames 
+ * @param pheno_valid_indices
  * @param shared_phenotype_data 
- * @param opt.delim_pheno 
+ * @param opt.pheno_delim
  * @param opt.missing_key 
  */
 
 void GEMRunner::process_phenotype_file() 
 {
     std::unordered_set<std::string> seen;
-    std::ifstream file(opt.pheno_file);
+    std::ifstream file(opt.pheno_add);
 
     if (!file.is_open()) 
     {
-        std::cerr << "Error opening file: " << opt.pheno_file << std::endl;
+        std::cerr << "Error opening file: " << opt.pheno_add << std::endl;
         exit(EXIT_FAILURE);
     }
     
@@ -316,11 +315,11 @@ void GEMRunner::process_phenotype_file()
     int col_indx = 0;
     int hdr_id_indx;
     
-    while (std::getline(ss, col_name, opt.delim_pheno)) 
+    while (std::getline(ss, col_name, opt.pheno_delim)) 
     {
         if (seen.insert(col_name).second)
         {
-            shared_colnames.push_back(col_name);
+            shared_pheno_colnames.push_back(col_name);
             if(col_name == opt.sampleid_header_name)
             {
                 hdr_id_indx = col_indx;
@@ -334,10 +333,11 @@ void GEMRunner::process_phenotype_file()
         ++col_indx;
     }
     
-    int num_columns = shared_colnames.size();
+    int num_columns = shared_pheno_colnames.size();
     std::cout << "Total columns: " << num_columns << "\n"; 
     std::cout << "****************************************************************************\n";
     shared_phenotype_data.resize(num_columns - 1);
+    pheno_valid_indices.resize(num_columns - 2);
     // The first two cols are FID and IID
     if(num_columns < 3)
     {
@@ -351,12 +351,12 @@ void GEMRunner::process_phenotype_file()
         std::stringstream ss(line);
         std::string value;
         std::ext::V_string values;
-        while(getline(ss, value, opt.delim_pheno))
+        while(getline(ss, value, opt.pheno_delim))
         {
             values.push_back(value);
         }
                     
-        if (!line.empty() && line.back() == opt.delim_pheno) 
+        if (!line.empty() && line.back() == opt.pheno_delim) 
         {
             values.push_back(opt.missing_key);
         }
@@ -389,18 +389,14 @@ void GEMRunner::process_phenotype_file()
             if(values[i] == opt.missing_key || values[i].empty())
             {
                 shared_phenotype_data[i - 2].push_back(opt.missing_key);
-                invalid_indices = true;
             }
             else
             {
                 shared_phenotype_data[i - 2].push_back(values[i]);
+                pheno_valid_indices[i - 2].insert(row_indx);  // record valid index
             }
         }
 
-        if(!invalid_indices)
-        {
-            shared_pheno_valid_indices.insert(row_indx);
-        }
         row_indx++;
     }
     
@@ -412,59 +408,6 @@ void GEMRunner::process_phenotype_file()
 }
 
 
-/**
- * @brief Remove lines with missing data coming from phenotype file
- * 
- * @param shared_cov_result.sampleID_list
- 
- * @param shared_pheno_valid_indices 
- * @param shared_cov_result.covMap 
- */
-void GEMRunner::clean_covMap_by_invalid_indices() 
-{
-    // Keep each sample ID and it is line number
-    std::unordered_map<std::string, int> seen_count;
-
-    // First pass: track which positions to delete per ID
-    std::unordered_map<std::string, std::ext::V_int> delete_positions;
-
-    for (size_t i = 0; i < shared_cov_result.sampleID_list.size(); ++i) 
-    {
-        // Find the occurance of line inside covData map
-        const std::string& id = shared_cov_result.sampleID_list[i];
-        int pos = seen_count[id]++;
-        if (!shared_pheno_valid_indices.count(i)) 
-        {
-            delete_positions[id].push_back(pos);
-        }
-    }
-
-    // Second pass: remove entries in reverse to preserve indexing
-    for (auto& [id, positions] : delete_positions) 
-    {
-        auto it = shared_cov_result.covMap.find(id);
-        if (it == shared_cov_result.covMap.end()) continue;
-
-        auto& vecs = it->second;
-
-        // Sort in descending order to erase from back to front
-        std::sort(positions.rbegin(), positions.rend());
-        // Remove the missing line from cov data 
-        for (int pos : positions) 
-        {
-            if (pos >= 0 && pos < static_cast<int>(vecs.size())) 
-            {
-                vecs.erase(vecs.begin() + pos);
-            }
-        }
-
-        if (vecs.empty()) 
-        {
-            shared_cov_result.covMap.erase(id);
-        }
-    }
-}
-
 
 /**
  * @brief Check if user provided the kinship file
@@ -473,7 +416,7 @@ void GEMRunner::clean_covMap_by_invalid_indices()
 
 void GEMRunner::check_kinship_usage() 
 {
-    kin_flag = !opt.kin_path.empty();  // sets true if user provided kin_path
+    kin_flag = !opt.kin_add.empty();  // sets true if user provided kin_path
 }
 
 
@@ -495,9 +438,9 @@ void GEMRunner::run_fit_nullmodel()
     model.fit_nullmodel(kin_flag,
                         bgen_sample_id,
                         dup_id,
-                        shared_pheno_valid_indices,
-                        shared_colnames,
+                        shared_pheno_colnames,
                         shared_phenotype_data,
+                        pheno_valid_indices,
                         c2_values // Pass C2 values by reference
     );
 }

@@ -6,20 +6,19 @@
 #include <chrono>
 
 
-SparseInverse::SparseInverse(const std::string kin_add, const std::string cov_add, const char kin_delim, 
+SparseInverse::SparseInverse(Cov &cov_copy, const std::string kin_add, const char kin_delim, 
                             const double kin_diag, const char cov_delim, 
-                            const std::string &m_sam_id, const std::ext::V_string &m_v_hdrs, 
-                             std::ext::V_string &bgen_sample_id, const std::string missing_key, 
-                             std::set<int> pheno_valid_indices) 
-                             : kin_delim(kin_delim), cov_delim(cov_delim)
+                            std::ext::V_string &bgen_sample_id, const std::string missing_key, 
+                            std::set<int> pheno_valid_indices) 
+                            : cov(cov_copy), kin_delim(kin_delim), cov_delim(cov_delim)
                                
 {
-    // cov.m_sam_id = m_sam_id;
-    cov.m_sam_id = m_sam_id;
-    cov.m_v_hdrs = m_v_hdrs;
+    // cov.m_sam_id_hdr = m_sam_id_hdr;
+    // cov.m_v_hdrs = m_v_hdrs;
+    // cov.m_pheno_valid_indices = pheno_valid_indices;
+    // cov.m_data_frame.m_geno_ids = bgen_sample_id;
+    // cov.m_data_frame.m_missing_key = missing_key;
     cov.m_pheno_valid_indices = pheno_valid_indices;
-    cov.m_data_frame.m_geno_ids = bgen_sample_id;
-    cov.m_data_frame.m_missing_key = missing_key;
     kin.m_data_frame.m_missing_key = missing_key;
     kin.m_diag = kin_diag;
     if (kin_add.size() > 0)
@@ -30,7 +29,7 @@ SparseInverse::SparseInverse(const std::string kin_add, const std::string cov_ad
     {
         kin.m_null_kin = true;
     }
-    cov.set_path(cov_add);
+    
     set_spmat();
 }
 
@@ -156,22 +155,22 @@ void SparseInverse::fill_vt4uniqkin(std::ext::VecTuples4spmat &vt4spmat)
 std::ext::VecTuples4spmat SparseInverse::create_tuple4spmat()
 {
     std::ext::VecTuples4spmat vt4spmat;
-    auto path = cov.get_path();
-    cov.read_file(path, cov_delim, cov.m_v_hdrs);
-    //Match with phenofile missing value
-    fmt::println("Number of observation in cov file before matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
-    std::ext::V_int pheno_valid_indices(cov.m_pheno_valid_indices.begin(), cov.m_pheno_valid_indices.end());
+    // auto path = cov.get_path();
+    // cov.read_file(path, cov_delim, cov.m_v_hdrs);
+    // //Match with phenofile missing value
+    fmt::println("Number of observation in covariate file before matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
+    std::ext::V_int pheno_valid_indices(cov.m_pheno_valid_indices.begin(), cov.m_pheno_valid_indices.end()); //convert set to vec
     //Remove lines with missing value from cov data based on phenotype missing data
     cov.m_data_frame.remove_missing(cov.m_v_hdrs, pheno_valid_indices);
     fmt::println("Number of observation in covariate file after matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
-    //Match genofile sample IDs
-    fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
-    //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
-    cov.m_data_frame.match_genoids(cov.m_sam_id, cov.m_v_hdrs);
-    fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
+    // //Match genofile sample IDs
+    // fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
+    // //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
+    // cov.m_data_frame.match_genoids(cov.m_sam_id_hdr, cov.m_v_hdrs);
+    // fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
     fmt::println("****************************************************************************");
     //Map cov sample ids to int to be used as matrix indices
-    set_idx_mp(cov.m_data_frame.m_data[cov.m_sam_id]);
+    set_idx_mp(cov.m_data_frame.m_data[cov.m_sam_id_hdr]);
 
     if(kin.m_null_kin)
     {
@@ -187,9 +186,9 @@ std::ext::VecTuples4spmat SparseInverse::create_tuple4spmat()
         std::unordered_set<uint64_t> added_pairsdiag;
         // std::unordered_set<uint64_t> added_pairs;
 
-        if (cov.m_data_frame.any_duplicated(cov.m_sam_id))
+        if (cov.m_data_frame.any_duplicated(cov.m_sam_id_hdr))
         {
-            auto duplicates = cov.m_data_frame.list_duplicates(cov.m_sam_id);
+            auto duplicates = cov.m_data_frame.list_duplicates(cov.m_sam_id_hdr);
             for( auto dup : duplicates)
             {
                 auto v_indices = m_idx_mp[dup]; //map id to index
@@ -228,7 +227,7 @@ std::ext::VecTuples4spmat SparseInverse::create_tuple4spmat()
 std::ext::VecTuples4spmat SparseInverse::create_tuple4_uniqkin()
 {
     std::ext::VecTuples4spmat vt4kin;
-    std::ext::V_string cov_uniq_IDs = cov.m_data_frame.uniq_ids(cov.m_sam_id);
+    std::ext::V_string cov_uniq_IDs = cov.m_data_frame.uniq_ids(cov.m_sam_id_hdr);
     set_idx_mp_uniqkin(cov_uniq_IDs);
 
     if(kin.m_null_kin)
@@ -263,10 +262,10 @@ void SparseInverse::set_spmat()
     m_spmat.resize(mat_size, mat_size);
     m_spmat.setFromTriplets(vt.begin(), vt.end());
     m_spmat.makeCompressed();
-    if (cov.m_data_frame.any_duplicated(cov.m_sam_id))
+    if (cov.m_data_frame.any_duplicated(cov.m_sam_id_hdr))
     {
         auto kinvt = create_tuple4_uniqkin();
-        std::size_t uniqkin_size = cov.m_data_frame.uniq_ids(cov.m_sam_id).size();
+        std::size_t uniqkin_size = cov.m_data_frame.uniq_ids(cov.m_sam_id_hdr).size();
         m_uniqkinmat.resize(uniqkin_size, uniqkin_size);
         m_uniqkinmat.setFromTriplets(kinvt.begin(), kinvt.end());
         m_uniqkinmat.makeCompressed();

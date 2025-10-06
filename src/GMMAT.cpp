@@ -1195,11 +1195,11 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
     //fill scaled_residuals
     glmmkin.scaled_residuals =  glmmkin.residuals.array() * fit0W.array() / res_var.array();
     // Calculate c1 for residual correction
-    if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id))//For duplicated IDs
+    if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))//For duplicated IDs
     {
         SpaMat kin = m_vkins_sp[0].get_uniqkin();
         double kin_diag = kin.diagonal().sum();
-        std::ext::V_string id_include = m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id);
+        std::ext::V_string id_include = m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr);
         SpaMat J;
         fill_J(id_include, J);
         // J is N in Nobs
@@ -1328,9 +1328,14 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id,
     return glmmkin;
 }
 
-
-glmmkin_residuals GMMAT::glmmkin_init(std::ext::FitNull_f const& fit0, 
+glmmkin_residuals GMMAT::glmmkin_init(Cov &cov_copy, const std::string kin_add, 
+                            const char kin_delim, 
+                            const double kin_diag, const char cov_delim, 
+                            std::ext::V_string &bgen_sample_id, 
+                            const std::string missing_key, 
+                            std::ext::FitNull_f const& fit0, 
                             std::ext::V_string const& ph_column,
+                            std::set<int> pheno_valid_indices,
                             std::ext::V_string cov_selected_hdrs, 
                             std::string rand_slope_hdr,
                             std::string const groups,
@@ -1341,10 +1346,14 @@ glmmkin_residuals GMMAT::glmmkin_init(std::ext::FitNull_f const& fit0,
                             double tau_max, int tau_region)
 {
     Glmmkin glmmkin;
+    SparseInverse sp(cov_copy, kin_add, kin_delim, 
+        kin_diag, cov_delim, bgen_sample_id, missing_key, 
+        pheno_valid_indices); 
+    m_vkins_sp = {sp};
     std::ext::V_double new_y;
     std::ext::V_string nomissing_y;
     //Remove lines where had missing data in pheno file
-    for(auto const& idx : m_vkins_sp[0].cov.m_pheno_valid_indices)
+    for(auto const& idx : pheno_valid_indices)
     {
         nomissing_y.push_back(ph_column[idx]);
     }
@@ -1399,7 +1408,7 @@ glmmkin_residuals GMMAT::glmmkin_init(std::ext::FitNull_f const& fit0,
     std::cout << "Start association test...\n \n";
     new_y.clear();
     fit_null = gf.convert_2_fit(); 
-    if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id))
+    if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))
     {
         std::cout << "Duplicated id detected...\nAssuming longitudinal data with repeated measures...\n";
         if(!m_vkins_sp[0].kin.m_null_kin) // if there is a kinship file add another matrix
@@ -1409,7 +1418,7 @@ glmmkin_residuals GMMAT::glmmkin_init(std::ext::FitNull_f const& fit0,
             m_vkins_sp.emplace_back(spi);
         }
 
-        auto duplicates = m_vkins_sp[0].cov.m_data_frame.list_duplicates(m_vkins_sp[0].cov.m_sam_id);
+        auto duplicates = m_vkins_sp[0].cov.m_data_frame.list_duplicates(m_vkins_sp[0].cov.m_sam_id_hdr);
         std::ext::Index_map mapped_indices = m_vkins_sp[0].get_idx_mp();
         SpaMat spi_mat;
         if(!m_vkins_sp[0].kin.m_null_kin)
@@ -1476,7 +1485,7 @@ glmmkin_residuals GMMAT::glmmkin_init(std::ext::FitNull_f const& fit0,
                           maxiter, tol, tau_min, tau_max, tau_region);
 
     glmmkin_residuals glmmkin_results;
-    glmmkin_results.id_include = unique_id(m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id));
+    glmmkin_results.id_include = unique_id(m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr));
     std::ext::V_double res_c1(
                             glmmkin.scaled_residuals_c1.data(),
                             glmmkin.scaled_residuals_c1.data() + glmmkin.scaled_residuals_c1.size()
