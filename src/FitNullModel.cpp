@@ -78,10 +78,11 @@ void NullModel::process_gmmat(const std::ext::V_string& column_names,
                 
                 for (int this_col = start_col; this_col < end_col; ++this_col) 
                 {
-                    auto gmmat = std::make_unique<GMMAT>();
-                    gmmat->m_vkins_sp = {sp};
+                    // auto gmmat = std::make_unique<GMMAT>();
+                    GMMAT gmmat;
+                    gmmat.m_vkins_sp = {sp};
 
-                glmmkin_residuals residuals = gmmat->glmmkin_postfit(
+                glmmkin_residuals residuals = gmmat.glmmkin_init(
                         fitNullModel2,
                         phenotype_data[this_col],
                         covariates,

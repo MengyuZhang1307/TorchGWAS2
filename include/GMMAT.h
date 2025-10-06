@@ -227,7 +227,7 @@ class GMMAT
          * @param tau_region 
          * @return Glmmkin 
          */
-        glmmkin_residuals glmmkin_postfit(std::ext::FitNull_f const& fit0, 
+        glmmkin_residuals glmmkin_init(std::ext::FitNull_f const& fit0, 
                 std::ext::V_string const& ph_column,
                 std::ext::V_string covSelectedHeader, 
                 std::string randomSlopeName,

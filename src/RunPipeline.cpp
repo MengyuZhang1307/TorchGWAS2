@@ -10,8 +10,8 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
     // Step 2: Read phenotype file
     process_phenotype_file();
 
-    // Step 3: Clean covariate map based on valid phenotype samples
-    clean_covMap_by_invalid_indices();
+    // // Step 3: Clean covariate map based on valid phenotype samples
+    // clean_covMap_by_invalid_indices();
     // Step 4 run BGEN metods
     bgen.process_bgen_header_block(opt.geno_file);
     bgen.process_bgen_sample_block(opt.sample_file.c_str(), opt.use_sample_file, 

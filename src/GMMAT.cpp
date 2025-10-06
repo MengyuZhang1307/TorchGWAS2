@@ -1329,7 +1329,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id,
 }
 
 
-glmmkin_residuals GMMAT::glmmkin_postfit(std::ext::FitNull_f const& fit0, 
+glmmkin_residuals GMMAT::glmmkin_init(std::ext::FitNull_f const& fit0, 
                             std::ext::V_string const& ph_column,
                             std::ext::V_string cov_selected_hdrs, 
                             std::string rand_slope_hdr,
