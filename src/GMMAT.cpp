@@ -1352,13 +1352,13 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov &cov_copy, const std::string kin_add,
     m_vkins_sp = {sp};
     std::ext::V_double new_y;
     std::ext::V_string nomissing_y;
-    //Remove lines where had missing data in pheno file
-    for(auto const& idx : pheno_valid_indices)
+    //Remove lines where had missing data in cov file
+    for(auto const& idx : m_vkins_sp[0].cov.m_data_frame.m_valid_indices)
     {
         nomissing_y.push_back(ph_column[idx]);
     }
-    //Remove lines where had missing data in cov file
-    for(auto const& idx : m_vkins_sp[0].cov.m_data_frame.m_valid_indices)
+    //Remove lines where had missing data in pheno file
+    for(auto const& idx : pheno_valid_indices)
     {
         new_y.push_back(std::stod(nomissing_y[idx]));
     }

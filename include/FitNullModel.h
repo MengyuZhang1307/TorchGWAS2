@@ -46,8 +46,10 @@ class NullModel
                             std::string const& output,
                             std::ext::V_double& c2_out);
         void print_res(std::string output, std::ext::V_string const& column_names,
-            std::ext::V_double const& c2, std::ext::V_string const& id_include,
-            std::ext::VV_double const& output_matrix);
+                        std::ext::V_double const& c2, 
+                        std::ext::V_string const&bgen_sample_id,
+                        std::ext::VV_string const& id_include, 
+                        std::ext::VV_double const& output_matrix);
 
 
 };

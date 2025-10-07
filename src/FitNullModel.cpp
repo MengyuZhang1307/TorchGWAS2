@@ -63,6 +63,7 @@ void NullModel::process_gmmat(const std::string kin_add,
 
     std::vector<std::thread> threads;
     //glmmkin_residuals is struct return type by GMMAT
+    std::ext::VV_string id_include_vec(pheno_columns);
     std::map<std::string, glmmkin_residuals> residual_map;
     std::vector<std::map<std::string, glmmkin_residuals>> thread_local_maps(num_threads);
 
@@ -132,15 +133,16 @@ void NullModel::process_gmmat(const std::string kin_add,
         }
     }
 
-    if (id_include.size() <= 0)
-    {
-        id_include = residual_map[pheno_column_names[2]].id_include;
-    }
+    // if (id_include.size() <= 0)
+    // {
+        // id_include = residual_map[pheno_column_names[2]].id_include;
+    // }
     
     std::ext::V_double c2;
     for (int col = 0; col < pheno_columns; ++col) 
     {
         auto& residual = residual_map[pheno_column_names[col + 2]].scaled_residuals_c1;
+        id_include_vec.emplace_back(residual_map[pheno_column_names[col + 2]].id_include);
         output_matrix.emplace_back(std::move(residual));
         c2.push_back(residual_map[pheno_column_names[col + 2]].c2);
     }
@@ -148,7 +150,7 @@ void NullModel::process_gmmat(const std::string kin_add,
     // Return C2 values
     c2_out = c2;
 
-    print_res(output, pheno_column_names, c2, id_include, output_matrix);
+    print_res(output, pheno_column_names, c2, bgen_sample_id, id_include_vec, output_matrix);
 }
 
  
@@ -169,10 +171,7 @@ void NullModel::fit_nullmodel(bool kin_flag,
         {
             cov_headers.insert(cov_headers.end(), opt.random_slope_header_name);
         }           
-        // SparseInverse sp(opt.kin_add, opt.cov_file, opt.delim_k, 
-        // opt.kin_diag, opt.delim_cov, opt.sampleid_header_name, 
-        // cov_headers, bgen_sample_id, opt.missing_key, 
-        // shared_pheno_valid_indices);
+     
         process_gmmat(opt.kin_add, opt.cov_add, opt.kin_delim,
                         opt.kin_diag, opt.cov_delim, opt.sampleid_header_name, 
                         cov_headers, bgen_sample_id, opt.missing_key,
@@ -482,36 +481,63 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
 
 
 
-void NullModel::print_res(std::string output, std::ext::V_string const& pheno_column_names,
-std::ext::V_double const& c2, std::ext::V_string const& id_include,
+void NullModel::print_res(
+    std::string output,
+    std::ext::V_string const& pheno_column_names,
+    std::ext::V_double const& c2,
+    std::ext::V_string const& bgen_sample_id, 
+    std::ext::VV_string const& id_include,
     std::ext::VV_double const& output_matrix)
 {
     std::ofstream out(output);
 
+    // Header line: phenotype names
     for (size_t i = 0; i < pheno_column_names.size(); ++i) 
     {
         out << pheno_column_names[i];
         if (i != pheno_column_names.size() - 1) out << '\t';
     }
+    out << '\n';
 
-    out << '\n' << '#' << '\t' << '#';
-
-    for (auto cor : c2)
+    // Correlation row
+    out << '#' << '\t' << '#';
+    for (auto cor : c2) 
     {
         out << '\t' << cor;
     }
-
     out << '\n';
 
-    for (size_t row = 0; row < output_matrix[0].size(); ++row) 
+    // --- build fast lookup for id_include --- to accomodate each ID seperately
+    std::vector<std::unordered_map<std::string, size_t>> id_lookup(id_include.size());
+    for (size_t ph = 0; ph < id_include.size(); ++ph) 
     {
-        out << id_include[row] << '\t' << id_include[row];
-        for (auto const& pheno : output_matrix)
+        for (size_t idx = 0; idx < id_include[ph].size(); ++idx) 
         {
-        out << '\t' << pheno[row];          
+            id_lookup[ph][id_include[ph][idx]] = idx;
+        }
+    }
+
+    // Main loop over all samples
+    for (size_t row = 0; row < bgen_sample_id.size(); ++row) 
+    {
+        out << bgen_sample_id[row] << '\t' << bgen_sample_id[row];
+
+        // check each phenotype
+        for (size_t ph = 0; ph < pheno_column_names.size(); ++ph) 
+        {
+            auto it = id_lookup[ph].find(bgen_sample_id[row]);
+            if (it != id_lookup[ph].end()) 
+            {
+                // found → use matching value
+                out << '\t' << output_matrix[ph][it->second];
+            } 
+            else 
+            {
+                // not found → missing, write zero
+                out << '\t' << 0;
+            }
         }
         out << '\n';
     }
 }
-
 
