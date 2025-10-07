@@ -512,7 +512,6 @@ void NullModel::print_res(
     std::vector<std::unordered_map<std::string, size_t>> id_lookup(id_include.size());
     for (size_t ph = 0; ph < id_include.size(); ++ph) 
     {
-        std::cout << "id_include[ph].size(): " << id_include[ph].size() << std::endl;
         for (size_t idx = 0; idx < id_include[ph].size(); ++idx) 
         {
             id_lookup[ph][id_include[ph][idx]] = idx;
