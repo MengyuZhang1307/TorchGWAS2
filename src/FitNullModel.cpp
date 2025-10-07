@@ -63,7 +63,8 @@ void NullModel::process_gmmat(const std::string kin_add,
 
     std::vector<std::thread> threads;
     //glmmkin_residuals is struct return type by GMMAT
-    std::ext::VV_string id_include_vec(pheno_columns);
+    std::ext::VV_string id_include_vec;
+    id_include_vec.reserve(pheno_columns);
     std::map<std::string, glmmkin_residuals> residual_map;
     std::vector<std::map<std::string, glmmkin_residuals>> thread_local_maps(num_threads);
 
@@ -511,6 +512,7 @@ void NullModel::print_res(
     std::vector<std::unordered_map<std::string, size_t>> id_lookup(id_include.size());
     for (size_t ph = 0; ph < id_include.size(); ++ph) 
     {
+        std::cout << "id_include[ph].size(): " << id_include[ph].size() << std::endl;
         for (size_t idx = 0; idx < id_include[ph].size(); ++idx) 
         {
             id_lookup[ph][id_include[ph][idx]] = idx;
@@ -523,9 +525,10 @@ void NullModel::print_res(
         out << bgen_sample_id[row] << '\t' << bgen_sample_id[row];
 
         // check each phenotype
-        for (size_t ph = 0; ph < pheno_column_names.size(); ++ph) 
+        for (size_t ph = 0; ph < pheno_column_names.size() - 2; ++ph) 
         {
             auto it = id_lookup[ph].find(bgen_sample_id[row]);
+
             if (it != id_lookup[ph].end()) 
             {
                 // found → use matching value

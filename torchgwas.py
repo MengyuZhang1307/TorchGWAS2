@@ -113,7 +113,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     #     return
     
     # Get corrected residuals from runner SHOULD GET CORRECTED SCALED RESIDUALS
-    ph_headers, c2_values, corrected_res = read_correction_file("outAddlie.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("outexample.txt") # read corrected_res, c2 and ph_headers from file
     # corrected_res = torch.from_numpy(runner.get_phenotypes()).float()
 
     #intercept = torch.from_numpy(runner.get_covariates()).float()
@@ -253,7 +253,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
 
             if writer is None:
                 writer = pq.ParquetWriter(
-                    "results_buffered.parquet", table.schema, compression="snappy"
+                    "results_buffered_ex.parquet", table.schema, compression="snappy"
                 )
             writer.write_table(table)
             buffer = []
@@ -265,7 +265,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
         table = pa.Table.from_pandas(df)
         if writer is None:
             writer = pq.ParquetWriter(
-                "results_buffered.parquet", table.schema, compression="snappy"
+                "results_buffered_ex.parquet", table.schema, compression="snappy"
             )
         writer.write_table(table)
 
@@ -277,7 +277,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     print(f"time for chunck = {end - start}")
 
     #Read the parquet file head
-    df_check = pd.read_parquet("results_buffered.parquet")
+    df_check = pd.read_parquet("results_buffered_ex.parquet")
 
     # Show first 5 rows
     print(df_check.head())

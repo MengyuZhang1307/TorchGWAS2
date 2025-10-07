@@ -341,7 +341,7 @@ void GEMRunner::process_phenotype_file()
     // The first two cols are FID and IID
     if(num_columns < 3)
     {
-        std::cerr << "ERROR: number of columns in phenotype file at least should be 3.\n";
+        fmt::println(stderr, "Warning: number of columns in phenotype file at least should be 3. check row: {}", row_indx);
         exit(EXIT_FAILURE);
     }
 
@@ -361,11 +361,10 @@ void GEMRunner::process_phenotype_file()
             values.push_back(opt.missing_key);
         }
 
-        if (values.size() != num_columns) 
+        if (values.size() < 3) 
         {
-            std::cerr << "ERROR: expect: " << num_columns << " columns at row: " << row_indx + 1 << " , while there is: " << values.size() << " columns."<< '\n';
-            std::cerr << "If delimiter is space check for extra spaces in line \n";
-            exit(EXIT_FAILURE);
+            values.resize(num_columns, opt.missing_key);
+
         }
 
         if (row_indx >= shared_cov_result.sampleID_list.size())
