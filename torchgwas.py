@@ -113,7 +113,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     #     return
     
     # Get corrected residuals from runner SHOULD GET CORRECTED SCALED RESIDUALS
-    ph_headers, c2_values, corrected_res = read_correction_file("outexample.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("outAddlie.txt") # read corrected_res, c2 and ph_headers from file
     # corrected_res = torch.from_numpy(runner.get_phenotypes()).float()
 
     #intercept = torch.from_numpy(runner.get_covariates()).float()

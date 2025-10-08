@@ -21,7 +21,7 @@ class GEMRunner
 private:
     // Internal helpers
     CovariateReadResult read_covariate_data() ;
-    void process_phenotype_file();     
+    // void process_phenotype_file();     
     void clean_covMap_by_invalid_indices();
     
     public:
@@ -31,11 +31,8 @@ private:
     std::ext::V_string bgen_sample_id;
     // Covariates and phenotype data
     CovariateReadResult shared_cov_result;
-    std::vector<std::set<int>> pheno_valid_indices;
-    std::ext::V_string shared_pheno_colnames;
-    std::ext::VV_string shared_phenotype_data;
     bool kin_flag = false;
-    bool dup_id = false;
+    bool is_dup_id = false;
     std::string genofile_type; //To be filled by geno_file_type
     std::ext::V_double c2_values;
     // Constructor

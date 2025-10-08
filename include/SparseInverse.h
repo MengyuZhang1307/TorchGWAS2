@@ -71,7 +71,7 @@ class SparseInverse
                       const double kin_diag, const char cov_delim, 
                       std::ext::V_string &bgen_sample_id,
                       const std::string missing_key, 
-                      std::set<int> pheno_valid_indices);
+                      std::ext::V_int pheno_valid_indices);
         void set_idx_mp(std::ext::V_string v_strs);
         //to create kinship from unique IDs
         void set_idx_mp_uniqkin(std::ext::V_string v_strs);

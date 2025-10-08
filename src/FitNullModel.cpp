@@ -36,15 +36,182 @@
 #include "FitNullModel.h" 
 
 NullModel::NullModel(const GEMOptions& user_opt): opt(user_opt){}
+
+void NullModel::process_phenotype_file(Cov& cov) 
+{
+    std::unordered_set<std::string> seen;
+    std::ifstream file(opt.pheno_add);
+
+    if (!file.is_open()) 
+    {
+        std::cerr << "Error opening file: " << opt.pheno_add << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    // Read header (column names)
+    std::string header_line;
+    std::getline(file, header_line);
+    std::stringstream ss(header_line);
+    std::string col_name;
+    int row_indx = 0;
+    int col_indx = 0;
+    int hdr_id_indx;
+    
+    while (std::getline(ss, col_name, opt.pheno_delim)) 
+    {
+        if (seen.insert(col_name).second)
+        {
+            pheno_column_names.push_back(col_name);
+            if(col_name == opt.sampleid_header_name)
+            {
+                hdr_id_indx = col_indx;
+            }
+        }
+        else
+        {
+            std::cerr << "ERROR: there are repeated columns'name in the phenotype file please check your file.\n";
+            exit(EXIT_FAILURE); 
+        }
+        ++col_indx;
+    }
+    
+    int num_columns = pheno_column_names.size();
+    std::cout << "Total columns: " << num_columns << "\n"; 
+    std::cout << "****************************************************************************\n";
+    
+    // The first two cols are FID and IID
+    if(num_columns < 3)
+    {
+        fmt::println(stderr, "Warning: number of columns in phenotype file at least should be 3. check row: {}", row_indx);
+        exit(EXIT_FAILURE);
+    }
+    
+    pheno_raw.clear();
+    std::string line;
+    while(getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string value;
+        std::ext::V_string values;
+        while(getline(ss, value, opt.pheno_delim))
+        {
+            values.push_back(value);
+        }
+                    
+        if (!line.empty() && line.back() == opt.pheno_delim) 
+        {
+            values.push_back(opt.missing_key);
+        }
+
+        if (values.size() < 3) 
+        {
+            values.resize(num_columns, opt.missing_key);
+
+        }
+
+        if (row_indx >= cov.m_data_frame.m_data[cov.m_sam_id_hdr].size())
+        {
+            std::cerr << "ERROR: Sample IDs in pheno file are more than covariate file " << '\n';
+            exit(EXIT_FAILURE);
+        }
+
+        if (values[hdr_id_indx] != cov.m_data_frame.m_data[cov.m_sam_id_hdr][row_indx]) 
+        {
+            std::cerr << "ERROR: Sample ID mismatch at line " << row_indx + 1
+                    << ". Expected: " << cov.m_data_frame.m_data[cov.m_sam_id_hdr][row_indx]
+                    << ", Found: " << values[hdr_id_indx] << '\n';
+            exit(EXIT_FAILURE);
+        }
+        
+        pheno_raw.push_back(std::move(values));
+        row_indx++;
+    }
+    
+    if (row_indx < cov.m_data_frame.m_data[cov.m_sam_id_hdr].size())
+        {
+            std::cerr << "ERROR: Sample IDs in covariate file are more than pheno file " << '\n';
+            exit(EXIT_FAILURE);
+        }
+}
+
+void NullModel::filter_pheno_by_cov(const Cov& cov)
+{
+    fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
+    const auto& kept = cov.m_data_frame.m_valid_indices;
+    const int num_traits = pheno_column_names.size() - 2;
+
+    phenotype_data.assign(num_traits, {});
+    pheno_valid_indices.assign(num_traits, {});
+
+     for (int t = 0; t < num_traits; ++t) 
+     {
+        phenotype_data[t].reserve(kept.size());       // each trait will have kept.size() rows
+        pheno_valid_indices[t].reserve(kept.size()); 
+    }
+
+    for (auto idx : kept) 
+    {
+        const auto& row = pheno_raw[idx];  // full row: FID, IID, traits...
+
+        for (int t = 0; t < num_traits; ++t) 
+        {
+            const std::string& v = row[t + 2]; // traits start at col 2
+            if (v.empty() || v == opt.missing_key) 
+            {
+                // store missing placeholder
+                phenotype_data[t].push_back(opt.missing_key);
+            } 
+            else 
+            {
+                phenotype_data[t].push_back(v);
+                // record index of valid observation 
+                pheno_valid_indices[t].push_back(phenotype_data[t].size() - 1); 
+            }
+        }
+    }
+    
+    const size_t pheno_rows_after = phenotype_data.empty() ? 0 : phenotype_data[0].size();
+    fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
+    std::cout << "****************************************************************************\n";
+    pheno_raw.clear();
+    pheno_raw.shrink_to_fit();
+}
+
  
+Cov NullModel::setup_cov_pheno(std::string const& cov_add,
+                        char const cov_delim,
+                        std::string const& sampleid_header_name,
+                        std::ext::V_string const& cov_headers,
+                        std::ext::V_string const& bgen_sample_id,
+                        std::string const& missing_key)
+{
+    Cov cov;
+    cov.m_sam_id_hdr = sampleid_header_name;
+    cov.m_v_hdrs = cov_headers;
+    cov.m_data_frame.m_geno_ids = bgen_sample_id;
+    cov.m_data_frame.m_missing_key = missing_key;
+    cov.set_path(cov_add);
+
+
+    auto path = cov.get_path();
+    cov.read_file(path, cov_delim, cov.m_v_hdrs);
+    process_phenotype_file(cov);
+    //Match genofile sample IDs
+    fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
+    //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
+    cov.m_data_frame.match_genoids(cov.m_sam_id_hdr, cov.m_v_hdrs);
+    fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
+    fmt::println("****************************************************************************");
+    filter_pheno_by_cov(cov); //Remove missing cov data from pheno file
+    return cov;
+}
+
+
 void NullModel::process_gmmat(const std::string kin_add, 
                             const std::string cov_add, const char kin_delim, 
                             const double kin_diag, const char cov_delim, 
                             const std::string &sampleid_header_name, const std::ext::V_string &cov_headers, 
                             std::ext::V_string &bgen_sample_id, const std::string missing_key, 
-                            const std::ext::V_string& pheno_column_names,
-                            const std::ext::VV_string& phenotype_data,
-                            std::vector<std::set<int>>& pheno_valid_indices,
                             int num_threads,
                             const std::ext::FitNull_f& fitNullModel2,
                             const std::ext::V_string& covariates,
@@ -52,6 +219,10 @@ void NullModel::process_gmmat(const std::string kin_add,
                             const std::string& output,
                             std::ext::V_double& c2_out)
 {
+    Cov cov = setup_cov_pheno(cov_add, cov_delim, sampleid_header_name, cov_headers,
+                        bgen_sample_id, missing_key);
+    // process_phenotype_file(cov);
+
     int col = 0;
     int num_columns = pheno_column_names.size();
     std::ext::VV_double output_matrix;
@@ -67,23 +238,7 @@ void NullModel::process_gmmat(const std::string kin_add,
     id_include_vec.reserve(pheno_columns);
     std::map<std::string, glmmkin_residuals> residual_map;
     std::vector<std::map<std::string, glmmkin_residuals>> thread_local_maps(num_threads);
-
-    Cov cov;
-    cov.m_sam_id_hdr = sampleid_header_name;
-    cov.m_v_hdrs = cov_headers;
-    cov.m_data_frame.m_geno_ids = bgen_sample_id;
-    cov.m_data_frame.m_missing_key = missing_key;
-    cov.set_path(cov_add);
-
-
-    auto path = cov.get_path();
-    cov.read_file(path, cov_delim, cov.m_v_hdrs);
-    //Match genofile sample IDs
-    fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
-    //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
-    cov.m_data_frame.match_genoids(cov.m_sam_id_hdr, cov.m_v_hdrs);
-    fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
-    fmt::println("****************************************************************************");
+    // setup covariate file
     //Map cov sample ids to int to be used as matrix indices
 
     for (int t = 0; t < num_threads; ++t) 
@@ -94,11 +249,11 @@ void NullModel::process_gmmat(const std::string kin_add,
         if (start_col >= end_col) break;  // no more work
 
         threads.emplace_back(
-            [cov_copy = cov, &kin_add, &kin_delim, &kin_diag,
+            [this, cov_copy = cov, &kin_add, &kin_delim, &kin_diag,
             &cov_delim, &bgen_sample_id, 
             &missing_key, start_col, t, end_col, &fitNullModel2, 
-            &phenotype_data, &pheno_valid_indices, &covariates, &random_slope_header_name, 
-            &pheno_column_names, &thread_local_maps] () mutable
+            &covariates, &random_slope_header_name, 
+            &thread_local_maps] () mutable
             {
                 auto& local_map = thread_local_maps[t];
                 
@@ -109,18 +264,18 @@ void NullModel::process_gmmat(const std::string kin_add,
                     glmmkin_residuals residuals = gmmat.glmmkin_init(cov_copy,
                         kin_add, kin_delim, kin_diag,
                         cov_delim, bgen_sample_id, 
-                        missing_key, fitNullModel2, phenotype_data[this_col], 
-                        pheno_valid_indices[this_col], 
+                        missing_key, fitNullModel2, this->phenotype_data[this_col], 
+                        this->pheno_valid_indices[this_col], 
                         covariates, random_slope_header_name, "", "REML", "AI",
                         500, 1e-5, 1e-5, 1e+5, 10
                     );
 
-                    local_map[pheno_column_names[this_col + 2]] = std::move(residuals);
+                    local_map[this->pheno_column_names[this_col + 2]] = std::move(residuals);
                 }
             }
         );
     }
-
+    
     for (auto& th : threads) 
     {
         th.join();
@@ -133,11 +288,6 @@ void NullModel::process_gmmat(const std::string kin_add,
             residual_map[key] = value;
         }
     }
-
-    // if (id_include.size() <= 0)
-    // {
-        // id_include = residual_map[pheno_column_names[2]].id_include;
-    // }
     
     std::ext::V_double c2;
     for (int col = 0; col < pheno_columns; ++col) 
@@ -157,13 +307,10 @@ void NullModel::process_gmmat(const std::string kin_add,
  
 void NullModel::fit_nullmodel(bool kin_flag,
         std::ext::V_string& bgen_sample_id,
-        bool dup_id,
-        std::ext::V_string& shared_pheno_colnames,
-        std::ext::VV_string& shared_phenotype_data,
-        std::vector<std::set<int>>& pheno_valid_indices,
+        bool is_dup_id,
         std::ext::V_double& c2_out)
 {
-    if (kin_flag || dup_id)
+    if (kin_flag || is_dup_id)
     {
         auto start_time_gmmat = std::chrono::high_resolution_clock::now();
         vector <string> cov_headers(opt.covariates);
@@ -176,8 +323,7 @@ void NullModel::fit_nullmodel(bool kin_flag,
         process_gmmat(opt.kin_add, opt.cov_add, opt.kin_delim,
                         opt.kin_diag, opt.cov_delim, opt.sampleid_header_name, 
                         cov_headers, bgen_sample_id, opt.missing_key,
-                        shared_pheno_colnames, shared_phenotype_data, 
-                        pheno_valid_indices, opt.threads, fitNullModel2, 
+                        opt.threads, fitNullModel2, 
                         opt.covariates, opt.random_slope_header_name, 
                         opt.outfile, c2_out);
         cout << "\nEnd of association test\n";

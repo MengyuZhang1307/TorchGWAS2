@@ -5,7 +5,7 @@ import pandas as pd
 #Set path
 sys.path.append("build")  
 sys.path.append("pymodules")  
-import Mygen
+# import Mygen
 from pymodules import ConfOpt
 # from torchgwas import run_gwas
 from torchgwas import read_correction_file, run_gwas
@@ -48,28 +48,28 @@ def save_block(start, end, headers, betas, ses, tstats, pvals, block_id):
 
 start_time = time.time()
 
-opt = ConfOpt(pheno_add = "example/example.pheno-2id-repeated",
-            cov_add = "example/example.pheno",
-            pheno_delim = ',',
-            cov_delim = ',',
-            kin_add = "example/example.kinship",
-            kin_delim = ',',
-            kin_diag = 0.5,
-            geno_add = "example/example.bgen",
-            sample_add = "example/example.sample",
-            do_filters = False,
-            use_sample_file = True,
-            includeVariantFile = "",
-            stream_snps = 1,
-            sampleid_header_name = "sampleid",
-            random_slope_header_name = "",
-            covariates = ["cov3"],
-            exposures = ["cov1"],
-            interactions = [],
-            missing_key = "NA",
-            threads = 5, 
-            num_chunks = 5,
-            outfile = "outexample.txt")
+# opt = ConfOpt(pheno_add = "example/example.pheno-2id-repeated",
+#             cov_add = "example/example.pheno",
+#             pheno_delim = ',',
+#             cov_delim = ',',
+#             kin_add = "example/example.kinship",
+#             kin_delim = ',',
+#             kin_diag = 0.5,
+#             geno_add = "example/example.bgen",
+#             sample_add = "example/example.sample",
+#             do_filters = False,
+#             use_sample_file = True,
+#             includeVariantFile = "",
+#             stream_snps = 1,
+#             sampleid_header_name = "sampleid",
+#             random_slope_header_name = "",
+#             covariates = ["cov3"],
+#             exposures = ["cov1"],
+#             interactions = [],
+#             missing_key = "NA",
+#             threads = 5, 
+#             num_chunks = 5,
+#             outfile = "outexample.txt")
 
 # opt = ConfOpt(pheno_file = "example/example.pheno2-2id",
 #             cov_file = "example/example.cov-2id",
@@ -91,30 +91,30 @@ opt = ConfOpt(pheno_add = "example/example.pheno-2id-repeated",
 #             num_chunks = 5,
 #             outfile = "outexample.txt")
 
-# opt = ConfOpt(
-#     pheno_add = "data/T2_pheno_QT_repeated",
-#     cov_add = "data/T2_covar",
-#     pheno_delim = "\t",
-#     cov_delim = " ",
-#     geno_add = "data/all_filtered.bgen",
-#     sample_ = "data/MRI_samples_chr1.sample",
-#     do_filters = False,
-#     use_sample_file = True,
-#     includeVariantFile = "",
-#     stream_snps = 10000,
-#     sampleid_header_name = "IID",
-#     random_slope_header_name = "",
-#     covariates = ["PC1"],
-#     exposures = [],
-#     interactions = [],
-#     missing_key = "NA",
-#     kin_add = "data/kinship.txt",
-#     kin_delim = ' ',
-#     kin_diag = 0.5,
-#     threads = 90,
-#     num_chunks = 90,
-#     outfile = "outAddlie.txt"
-# )
+opt = ConfOpt(
+    pheno_add = "data/T2_pheno_QT_repeated_missingvalue",
+    cov_add = "data/T2_covar",
+    pheno_delim = "\t",
+    cov_delim = " ",
+    geno_add = "data/all_filtered.bgen",
+    sample_add = "data/MRI_samples_chr1.sample",
+    do_filters = False,
+    use_sample_file = True,
+    includeVariantFile = "",
+    stream_snps = 10000,
+    sampleid_header_name = "IID",
+    random_slope_header_name = "",
+    covariates = ["PC1"],
+    exposures = [],
+    interactions = [],
+    missing_key = "NA",
+    kin_add = "data/kinship.txt",
+    kin_delim = ' ',
+    kin_diag = 0.5,
+    threads = 1,
+    num_chunks = 90,
+    outfile = "outAddlie.txt"
+)
 
 runner = GEMRunner(opt.get())
 

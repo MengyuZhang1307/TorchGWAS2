@@ -227,13 +227,13 @@ class GMMAT
          * @param tau_region 
          * @return Glmmkin 
          */
-        glmmkin_residuals glmmkin_init(Cov &cov_copy,
+        glmmkin_residuals glmmkin_init(Cov cov_copy,
                 const std::string kin_add, const char kin_delim, 
                 const double kin_diag, const char cov_delim, 
                 std::ext::V_string &bgen_sample_id, const std::string missing_key, 
                 std::ext::FitNull_f const& fit0, 
                 std::ext::V_string const& ph_column,
-                std::set<int> pheno_valid_indices,
+                std::ext::V_int pheno_valid_indices,
                 std::ext::V_string covSelectedHeader, 
                 std::string randomSlopeName,
                 std::string const groups,

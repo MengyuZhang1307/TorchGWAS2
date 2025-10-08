@@ -7,10 +7,7 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
     // Step 1:  Read covariate file
     shared_cov_result = read_covariate_data();
 
-    // Step 2: Read phenotype file
-    process_phenotype_file();
-
-    // Step 3 run BGEN metods
+    // Step 2 run BGEN metods
     bgen.process_bgen_header_block(opt.geno_add);
     bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
                                     shared_cov_result.covMap, opt.missing_key, 
@@ -20,7 +17,7 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
     //                                          opt.do_filters);
     bgen_sample_id = bgen.sampleID;
     bgen.filterVariants = opt.do_filters;
-    dup_id = shared_cov_result.cov_is_duplicated;
+    is_dup_id = shared_cov_result.cov_is_duplicated;
     // free heavy members
     shared_cov_result.sampleID_list.clear();
     shared_cov_result.covMap.clear();
@@ -280,134 +277,6 @@ CovariateReadResult GEMRunner::read_covariate_data()
     return result;
 }
 
-
-/**
- * @brief Read phenotype file
- * 
- * @param opt.pheno_add 
- * @param opt.sampleid_header_name 
- * @param shared_cov_result.sampleID_list 
- * @param valid_indices 
- * @param shared_pheno_colnames 
- * @param pheno_valid_indices
- * @param shared_phenotype_data 
- * @param opt.pheno_delim
- * @param opt.missing_key 
- */
-
-void GEMRunner::process_phenotype_file() 
-{
-    std::unordered_set<std::string> seen;
-    std::ifstream file(opt.pheno_add);
-
-    if (!file.is_open()) 
-    {
-        std::cerr << "Error opening file: " << opt.pheno_add << std::endl;
-        exit(EXIT_FAILURE);
-    }
-    
-    // Read header (column names)
-    std::string header_line;
-    std::getline(file, header_line);
-    std::stringstream ss(header_line);
-    std::string col_name;
-    int row_indx = 0;
-    int col_indx = 0;
-    int hdr_id_indx;
-    
-    while (std::getline(ss, col_name, opt.pheno_delim)) 
-    {
-        if (seen.insert(col_name).second)
-        {
-            shared_pheno_colnames.push_back(col_name);
-            if(col_name == opt.sampleid_header_name)
-            {
-                hdr_id_indx = col_indx;
-            }
-        }
-        else
-        {
-            std::cerr << "ERROR: there are repeated columns'name in the phenotype file please check your file.\n";
-            exit(EXIT_FAILURE); 
-        }
-        ++col_indx;
-    }
-    
-    int num_columns = shared_pheno_colnames.size();
-    std::cout << "Total columns: " << num_columns << "\n"; 
-    std::cout << "****************************************************************************\n";
-    shared_phenotype_data.resize(num_columns - 1);
-    pheno_valid_indices.resize(num_columns - 2);
-    // The first two cols are FID and IID
-    if(num_columns < 3)
-    {
-        fmt::println(stderr, "Warning: number of columns in phenotype file at least should be 3. check row: {}", row_indx);
-        exit(EXIT_FAILURE);
-    }
-
-    std::string line;
-    while(getline(file, line))
-    {
-        std::stringstream ss(line);
-        std::string value;
-        std::ext::V_string values;
-        while(getline(ss, value, opt.pheno_delim))
-        {
-            values.push_back(value);
-        }
-                    
-        if (!line.empty() && line.back() == opt.pheno_delim) 
-        {
-            values.push_back(opt.missing_key);
-        }
-
-        if (values.size() < 3) 
-        {
-            values.resize(num_columns, opt.missing_key);
-
-        }
-
-        if (row_indx >= shared_cov_result.sampleID_list.size())
-        {
-            std::cerr << "ERROR: Sample IDs in pheno file are more than covariate file " << '\n';
-            exit(EXIT_FAILURE);
-        }
-
-        if (values[hdr_id_indx] != shared_cov_result.sampleID_list[row_indx]) 
-        {
-            std::cerr << "ERROR: Sample ID mismatch at line " << row_indx + 1
-                    << ". Expected: " << shared_cov_result.sampleID_list[row_indx]
-                    << ", Found: " << values[hdr_id_indx] << '\n';
-            exit(EXIT_FAILURE);
-        }
-        
-        bool invalid_indices = false;
-
-        for(int i = 2; i < num_columns; i++)
-        {
-            if(values[i] == opt.missing_key || values[i].empty())
-            {
-                shared_phenotype_data[i - 2].push_back(opt.missing_key);
-            }
-            else
-            {
-                shared_phenotype_data[i - 2].push_back(values[i]);
-                pheno_valid_indices[i - 2].insert(row_indx);  // record valid index
-            }
-        }
-
-        row_indx++;
-    }
-    
-    if (row_indx < shared_cov_result.sampleID_list.size())
-        {
-            std::cerr << "ERROR: Sample IDs in covariate file are more than pheno file " << '\n';
-            exit(EXIT_FAILURE);
-        }
-}
-
-
-
 /**
  * @brief Check if user provided the kinship file
  * 
@@ -436,10 +305,7 @@ void GEMRunner::run_fit_nullmodel()
     NullModel model(opt);
     model.fit_nullmodel(kin_flag,
                         bgen_sample_id,
-                        dup_id,
-                        shared_pheno_colnames,
-                        shared_phenotype_data,
-                        pheno_valid_indices,
+                        is_dup_id,                       
                         c2_values // Pass C2 values by reference
     );
 }

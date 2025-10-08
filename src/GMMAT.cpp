@@ -1328,14 +1328,14 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id,
     return glmmkin;
 }
 
-glmmkin_residuals GMMAT::glmmkin_init(Cov &cov_copy, const std::string kin_add, 
+glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add, 
                             const char kin_delim, 
                             const double kin_diag, const char cov_delim, 
                             std::ext::V_string &bgen_sample_id, 
                             const std::string missing_key, 
                             std::ext::FitNull_f const& fit0, 
                             std::ext::V_string const& ph_column,
-                            std::set<int> pheno_valid_indices,
+                            std::ext::V_int pheno_valid_indices,
                             std::ext::V_string cov_selected_hdrs, 
                             std::string rand_slope_hdr,
                             std::string const groups,
@@ -1352,21 +1352,18 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov &cov_copy, const std::string kin_add,
     m_vkins_sp = {sp};
     std::ext::V_double new_y;
     std::ext::V_string nomissing_y;
-    //Remove lines where had missing data in cov file
-    for(auto const& idx : m_vkins_sp[0].cov.m_data_frame.m_valid_indices)
-    {
-        nomissing_y.push_back(ph_column[idx]);
-    }
+
     //Remove lines where had missing data in pheno file
     for(auto const& idx : pheno_valid_indices)
     {
-        new_y.push_back(std::stod(nomissing_y[idx]));
+        new_y.push_back(std::stod(ph_column[idx]));
     }
-   
+
     m_y = conv_vec_vecXd(new_y);
     int y_size = m_y.size();
     std::ext::V_string v_valid_methods {"REML", "ML"};
     auto it = std::find(v_valid_methods.begin(), v_valid_methods.end(), method);
+
     if(it == v_valid_methods.end())
     {
         fmt::print(stderr, "Error: {} is not in GMMAT valid methods (REML, ML)\n", method);
