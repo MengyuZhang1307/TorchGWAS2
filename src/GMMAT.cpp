@@ -1198,7 +1198,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
     if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))//For duplicated IDs
     {
         SpaMat kin = m_vkins_sp[0].get_uniqkin();
-        double kin_diag = kin.diagonal().sum();
+        // double kin_diag = kin.diagonal().sum();
         std::ext::V_string id_include = m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr);
         SpaMat J;
         fill_J(id_include, J);
@@ -1212,7 +1212,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
             auto fp_c1 = Jsigma_iJ.diagonal().sum(); 
             auto sp1_c1 = Jsigma_ix.transpose() * Jsigma_ix;
             auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(sp1_c1)).sum();
-            auto c1 = kin_diag / (fp_c1 - sp_c1);
+            auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
             glmmkin.scaled_residuals_c1 = c1 * Jres;
             double sum_squ_scaled_residuals = Jres.squaredNorm(); //sum of squared absolute values
             glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (Jres.size() - 1));
@@ -1222,19 +1222,19 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
             auto fp_c1 = (Jsigma_iJ.cwiseProduct(kin)).sum();
             auto sp1_c1 = crossprod(Jsigma_ix, kin) * Jsigma_ix;
             auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(sp1_c1)).sum();
-            auto c1 = kin_diag / (fp_c1 - sp_c1);
+            auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
             glmmkin.scaled_residuals_c1 = c1 * Jres;
             double sum_squ_scaled_residuals = Jres.squaredNorm();
             glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (Jres.size() - 1));
         }
     }
-    else
+    else //For cross-sectional
     {
         SpaMat kin = m_vkins_sp[0].get_spmat();
-        double kin_diag = kin.diagonal().sum();
+        // double kin_diag = kin.diagonal().sum();
         auto fp_c1 = (glmmkin.fit.sigma_i.cwiseProduct(kin)).sum();
         auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, kin) * glmmkin.fit.sigma_ix)).sum();
-        auto c1 = kin_diag / (fp_c1 - sp_c1);
+        auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
         glmmkin.scaled_residuals_c1 = c1 * glmmkin.scaled_residuals;
         double sum_squ_scaled_residuals = glmmkin.scaled_residuals.squaredNorm();
         glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (glmmkin.scaled_residuals.size() - 1));
@@ -1330,7 +1330,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id,
 
 glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add, 
                             const char kin_delim, 
-                            const double kin_diag, const char cov_delim, 
+                            const double kin_diag_value, const char cov_delim, 
                             std::ext::V_string &bgen_sample_id, 
                             const std::string missing_key, 
                             std::ext::FitNull_f const& fit0, 
@@ -1346,10 +1346,14 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
                             double tau_max, int tau_region)
 {
     Glmmkin glmmkin;
+    SparseInverse sp_missing(cov_copy, kin_add, kin_delim, 
+        kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
+        pheno_valid_indices, true); 
     SparseInverse sp(cov_copy, kin_add, kin_delim, 
-        kin_diag, cov_delim, bgen_sample_id, missing_key, 
-        pheno_valid_indices); 
-    m_vkins_sp = {sp};
+        kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
+        pheno_valid_indices, false); //sp without removing missing pheno value
+    m_vkins_sp.push_back(std::move(sp_missing));
+    spm_diag_nomiss = sp.get_spmat().diagonal().sum();
     std::ext::V_double new_y;
     std::ext::V_string nomissing_y;
 

@@ -7,15 +7,15 @@
 
 
 SparseInverse::SparseInverse(Cov &cov_copy, const std::string kin_add, const char kin_delim, 
-                            const double kin_diag, const char cov_delim, 
+                            const double kin_diag_value, const char cov_delim, 
                             std::ext::V_string &bgen_sample_id, const std::string missing_key, 
-                            std::ext::V_int pheno_valid_indices) 
+                            std::ext::V_int pheno_valid_indices, bool remove_missing) 
                             : cov(cov_copy), kin_delim(kin_delim), cov_delim(cov_delim)
                                
 {
     cov.m_pheno_valid_indices = pheno_valid_indices;
     kin.m_data_frame.m_missing_key = missing_key;
-    kin.m_diag = kin_diag;
+    kin.m_diag = kin_diag_value;
     if (kin_add.size() > 0)
     {
         kin.set_path(kin_add);
@@ -24,7 +24,15 @@ SparseInverse::SparseInverse(Cov &cov_copy, const std::string kin_add, const cha
     {
         kin.m_null_kin = true;
     }
-    
+    if (remove_missing) 
+    {
+        fmt::println("Number of observation in covariate file before matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
+        //Remove lines with missing value from cov data based on phenotype missing data
+        cov.m_data_frame.remove_missing(cov.m_v_hdrs, cov.m_pheno_valid_indices);
+        fmt::println("Number of observation in covariate file after matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
+        fmt::println("****************************************************************************");
+    }
+
     set_spmat();
 }
 
@@ -150,11 +158,7 @@ void SparseInverse::fill_vt4uniqkin(std::ext::VecTuples4spmat &vt4spmat)
 std::ext::VecTuples4spmat SparseInverse::create_tuple4spmat()
 {
     std::ext::VecTuples4spmat vt4spmat;
-    fmt::println("Number of observation in covariate file before matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
-    //Remove lines with missing value from cov data based on phenotype missing data
-    cov.m_data_frame.remove_missing(cov.m_v_hdrs, cov.m_pheno_valid_indices);
-    fmt::println("Number of observation in covariate file after matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
-    fmt::println("****************************************************************************");
+
     //Map cov sample ids to int to be used as matrix indices
     set_idx_mp(cov.m_data_frame.m_data[cov.m_sam_id_hdr]);
 

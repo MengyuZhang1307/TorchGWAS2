@@ -244,6 +244,7 @@ class GMMAT
                 double tau_max = 1e+5, int tau_region = 10);
     
     private:
+        double spm_diag_nomiss; //keep diagonal of matrix without removing missing values
         void set_ai_low_ng(int i, DensVec& score, DensMat& ai, DensVec const& wpy, Fit const& fit, 
                             DensVec const& py, DensVec diagp, DensMat sigma_ixcov);
         void set_ai_high_ng(int i, DensVec& score, DensMat& ai, DensVec const& wpy, Fit const& fit,
