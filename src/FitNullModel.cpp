@@ -103,7 +103,7 @@ void NullModel::process_phenotype_file(Cov& cov)
             values.push_back(opt.missing_key);
         }
 
-        if (values.size() < 3) 
+        if (values.size() < num_columns) 
         {
             values.resize(num_columns, opt.missing_key);
 
@@ -156,6 +156,7 @@ void NullModel::filter_pheno_by_cov(const Cov& cov)
         for (int t = 0; t < num_traits; ++t) 
         {
             const std::string& v = row[t + 2]; // traits start at col 2
+
             if (v.empty() || v == opt.missing_key) 
             {
                 // store missing placeholder

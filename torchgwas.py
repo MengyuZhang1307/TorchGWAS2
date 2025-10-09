@@ -101,24 +101,8 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     """
     Run GWAS using a pre-configured GEMRunner instance.
     """
-    # Get C2 values from the runner (try fitting null model first)
-    # c2_values = None
-    # try:
-    #     runner.run_fit_nullmodel()
-    #     c2_values = runner.get_c2_values()
-    #     print(f"Fitted null model and obtained C2 values for SE adjustment: {c2_values}")
-    # except Exception as e:
-    #     print(f"Could not fit null model or get C2 values: {e}")
-    #     print("Proceeding without C2 adjustment")
-    # if c2_values is None:
-    #     return
-    
-    # Get corrected residuals from runner SHOULD GET CORRECTED SCALED RESIDUALS
-    #ph_headers, c2_values, corrected_res = read_correction_file("outAddlie.txt") # read corrected_res, c2 and ph_headers from file
-    ph_headers, c2_values, corrected_res = read_correction_file("test_output.txt") # read corrected_res, c2 and ph_headers from file
-    # corrected_res = torch.from_numpy(runner.get_phenotypes()).float()
-
-    #intercept = torch.from_numpy(runner.get_covariates()).float()
+ 
+    ph_headers, c2_values, corrected_res = read_correction_file("outAddlie.txt") # read corrected_res, c2 and ph_headers from file
     
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -132,20 +116,8 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     n_samples, n_corrected_res = corrected_res.shape
 
     # Center phenotypes with NaN-safe mean and replace NaNs
-    #ph_mean = torch.nanmean(phenotypes, dim=0, keepdim=True)
-    #phenotypes = phenotypes - ph_mean
     corrected_res = torch.nan_to_num(corrected_res, nan=0.0)
 
-    #c = covariates.cpu().numpy()
-    #c_mean = np.nanmean(c, axis=0, keepdims=True)
-    #c_std = np.nanstd(c, axis=0, keepdims=True)
-    #c_std[c_std < 1e-12] = 1.0
-    #c = (c - c_mean) / c_std
-    #c = np.nan_to_num(c, nan=0.0)
-    #covarQ, _ = np.linalg.qr(c)
-    #covarQ = torch.from_numpy(covarQ).float().to(device)
-    
-    #pheno_normalized = phenotypes - torch.matmul(covarQ, torch.matmul(covarQ.T, phenotypes))
     # Save phenotype std BEFORE normalization for scaling beta/gamma
     ph_std_pre = torch.std(corrected_res, dim=0, keepdim=True, unbiased=False).clamp_min(1e-8)
     corrected_res = corrected_res / ph_std_pre
@@ -255,7 +227,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
 
             if writer is None:
                 writer = pq.ParquetWriter(
-                    "results_buffered_ex.parquet", table.schema, compression="snappy"
+                    "results_buffered_updated.parquet", table.schema, compression="snappy"
                 )
             writer.write_table(table)
             buffer = []
@@ -267,7 +239,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
         table = pa.Table.from_pandas(df)
         if writer is None:
             writer = pq.ParquetWriter(
-                "results_buffered_ex.parquet", table.schema, compression="snappy"
+                "results_buffered_updated.parquet", table.schema, compression="snappy"
             )
         writer.write_table(table)
 
@@ -279,7 +251,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     print(f"time for chunck = {end - start}")
 
     #Read the parquet file head
-    df_check = pd.read_parquet("results_buffered_ex.parquet")
+    df_check = pd.read_parquet("results_buffered_updated.parquet")
 
     # Show first 5 rows
     print(df_check.head())

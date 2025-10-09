@@ -92,7 +92,7 @@ start_time = time.time()
 #             outfile = "outexample.txt")
 
 opt = ConfOpt(
-    pheno_add = "data/T2_pheno_QT_repeated_missingvalue",
+    pheno_add = "data/T2_pheno_QT_repeated",
     cov_add = "data/T2_covar",
     pheno_delim = "\t",
     cov_delim = " ",
@@ -111,7 +111,7 @@ opt = ConfOpt(
     kin_add = "data/kinship.txt",
     kin_delim = ' ',
     kin_diag = 0.5,
-    threads = 1,
+    threads = 90,
     num_chunks = 90,
     outfile = "outAddlie.txt"
 )
