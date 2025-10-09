@@ -1194,6 +1194,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
     DensVec fit0W = DensVec::Constant(glmmkin.fit.W.size(), 1);
     //fill scaled_residuals
     glmmkin.scaled_residuals =  glmmkin.residuals.array() * fit0W.array() / res_var.array();
+    
     // Calculate c1 for residual correction
     if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))//For duplicated IDs
     {
@@ -1236,6 +1237,16 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
         auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, kin) * glmmkin.fit.sigma_ix)).sum();
         auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
         glmmkin.scaled_residuals_c1 = c1 * glmmkin.scaled_residuals;
+        //pad scaled residuals to the size of non missing kinship
+        size_t scaled_res_size = glmmkin.scaled_residuals.size();
+        std::cout << "res before padding" << glmmkin.scaled_residuals.size() << "\n";
+        if (spm_nomiss_dim > scaled_res_size) 
+        {
+            glmmkin.scaled_residuals.conservativeResize(spm_nomiss_dim);
+            glmmkin.scaled_residuals.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
+        }
+        
+        std::cout << "res after padding" << glmmkin.scaled_residuals.size() << "\n";
         double sum_squ_scaled_residuals = glmmkin.scaled_residuals.squaredNorm();
         glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (glmmkin.scaled_residuals.size() - 1));
     }
@@ -1349,11 +1360,17 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     SparseInverse sp_missing(cov_copy, kin_add, kin_delim, 
         kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
         pheno_valid_indices, true); 
-    SparseInverse sp(cov_copy, kin_add, kin_delim, 
-        kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
-        pheno_valid_indices, false); //sp without removing missing pheno value
     m_vkins_sp.push_back(std::move(sp_missing));
-    spm_diag_nomiss = sp.get_spmat().diagonal().sum();
+
+    {
+        SparseInverse sp(cov_copy, kin_add, kin_delim, 
+            kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
+            pheno_valid_indices, false); //sp without removing missing pheno value
+        spm_diag_nomiss = sp.get_spmat().diagonal().sum();
+        spm_nomiss_dim = sp.get_spmat().cols();
+        std::cout << "spm_nomiss_dim " << spm_nomiss_dim;
+    }
+    
     std::ext::V_double new_y;
     std::ext::V_string nomissing_y;
 

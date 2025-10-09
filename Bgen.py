@@ -111,7 +111,7 @@ opt = ConfOpt(
     kin_add = "data/kinship.txt",
     kin_delim = ' ',
     kin_diag = 0.5,
-    threads = 90,
+    threads = 1,
     num_chunks = 90,
     outfile = "outAddlie.txt"
 )

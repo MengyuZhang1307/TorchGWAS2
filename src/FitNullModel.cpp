@@ -221,8 +221,6 @@ void NullModel::process_gmmat(const std::string kin_add,
 {
     Cov cov = setup_cov_pheno(cov_add, cov_delim, sampleid_header_name, cov_headers,
                         bgen_sample_id, missing_key);
-    // process_phenotype_file(cov);
-
     int col = 0;
     int num_columns = pheno_column_names.size();
     std::ext::VV_double output_matrix;
