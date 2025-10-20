@@ -36,7 +36,7 @@ private:
     std::string genofile_type; //To be filled by geno_file_type
     std::ext::V_double c2_values;
     // Constructor
-    explicit GEMRunner(const GEMOptions& user_opt);
+    explicit GEMRunner(GEMOptions const& user_opt);
     void find_genofile_type();
     void run_fit_nullmodel(); 
     void check_kinship_usage();

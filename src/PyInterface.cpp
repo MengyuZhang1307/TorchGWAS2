@@ -29,12 +29,6 @@ PYBIND11_MODULE(Mygen, m)
 {
     m.doc() = R"doc(
         GEM interface for BGEN dosage calculation.
-
-        Command sample:
-        ./build/GEM pheno_file cov_file pheno_del cov_del bgen_file sample_bgen_file
-                    do_filter use_sample_file includeVariantFile stream_snps sampleid
-                    randomslope covariates interactions missing_key kin_path
-                    delim_k kin_diag threads num_chunks out_file
         Note:
         Please use "" or [] if you do not want to pass a value for a specific argument.
         )doc";

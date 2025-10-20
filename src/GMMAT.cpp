@@ -1239,14 +1239,13 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
         glmmkin.scaled_residuals_c1 = c1 * glmmkin.scaled_residuals;
         //pad scaled residuals to the size of non missing kinship
         size_t scaled_res_size = glmmkin.scaled_residuals.size();
-        std::cout << "res before padding" << glmmkin.scaled_residuals.size() << "\n";
+
         if (spm_nomiss_dim > scaled_res_size) 
         {
             glmmkin.scaled_residuals.conservativeResize(spm_nomiss_dim);
             glmmkin.scaled_residuals.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
         }
         
-        std::cout << "res after padding" << glmmkin.scaled_residuals.size() << "\n";
         double sum_squ_scaled_residuals = glmmkin.scaled_residuals.squaredNorm();
         glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (glmmkin.scaled_residuals.size() - 1));
     }

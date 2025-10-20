@@ -102,7 +102,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     Run GWAS using a pre-configured GEMRunner instance.
     """
  
-    ph_headers, c2_values, corrected_res = read_correction_file("outAddlie.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("missing-x1-x10.txt") # read corrected_res, c2 and ph_headers from file
     
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -214,7 +214,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
         b_np  = beta_coeffs.cpu().numpy()  # (num_snps, num_pheno)
         se_np = se.cpu().numpy()           # (num_snps, num_pheno)
 
-        # Stack [beta, se] → shape (num_snps, num_pheno*2)
+        # Stack [beta, se] → shape (num_snps, num_pheno, 2)
         all_stats = np.stack([b_np, se_np], axis=2)
         all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
 
@@ -227,7 +227,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
 
             if writer is None:
                 writer = pq.ParquetWriter(
-                    "results_buffered_updated.parquet", table.schema, compression="snappy"
+                    "results_missing_x1_x10.parquet", table.schema, compression="snappy"
                 )
             writer.write_table(table)
             buffer = []
@@ -239,7 +239,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
         table = pa.Table.from_pandas(df)
         if writer is None:
             writer = pq.ParquetWriter(
-                "results_buffered_updated.parquet", table.schema, compression="snappy"
+                "results_missing_x1_x10.parquet", table.schema, compression="snappy"
             )
         writer.write_table(table)
 
@@ -251,8 +251,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     print(f"time for chunck = {end - start}")
 
     #Read the parquet file head
-    df_check = pd.read_parquet("results_buffered_updated.parquet")
-
+    df_check = pd.read_parquet("results_missing_x1_x10.parquet")
     # Show first 5 rows
     print(df_check.head())
 

@@ -188,10 +188,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
     fincov.close();
 
     // Check for potential categorical variables by counting unique values
-    std::cout << "\n****************************************************************************\n";
-    std::cout << "Checking for potential categorical variables...\n";
-    std::cout << "****************************************************************************\n";
-    
+    std::cout << "Checking for potential categorical variables...\n";    
     const int CATEGORICAL_THRESHOLD = 10; // Consider as categorical if <= 10 unique values
     
     // For each covariate column, count unique values
@@ -286,15 +283,6 @@ void GEMRunner::check_kinship_usage()
 {
     kin_flag = !opt.kin_add.empty();  // sets true if user provided kin_path
 }
-
-
-/**
- * @brief calculate dosages for bgen allesss per each sample
- * 
- * @param start_chunck 
- * @param chunks_to_read 
- * @return py::array_t<float> 
- */
 
 /**
  * @brief Function to call null model from python

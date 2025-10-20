@@ -35,7 +35,7 @@
 
 #include "FitNullModel.h" 
 
-NullModel::NullModel(const GEMOptions& user_opt): opt(user_opt){}
+NullModel::NullModel(GEMOptions const& user_opt): opt(user_opt){}
 
 void NullModel::process_phenotype_file(Cov& cov) 
 {

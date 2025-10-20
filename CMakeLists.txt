@@ -73,7 +73,7 @@ if(NOT eigen_POPULATED)
     add_library(eigen INTERFACE)
     target_include_directories(eigen INTERFACE ${eigen_SOURCE_DIR})
 endif()
-#Fetch Boost=================================================================
+#Fetch Boost better to install Boost manually=================================================================
 # FetchContent_Declare(
 #  Boost
 #  GIT_REPOSITORY https://github.com/boostorg/boost.git
@@ -190,7 +190,7 @@ set(SUITESPARSE_LIBRARIES
 )
 
 # Set executable for Python module ================================
-set(SOURCES ${SRC} ${CC_SOURCES} ${C_SOURCES})
+# set(SOURCES ${SRC} ${CC_SOURCES} ${C_SOURCES})
 add_library(Mygen MODULE ${SOURCES})
 
 target_include_directories(Mygen PRIVATE
@@ -204,7 +204,6 @@ target_include_directories(Mygen PRIVATE
     ${suitesparse_SOURCE_DIR}/AMD/Include
     ${suitesparse_SOURCE_DIR}/SuiteSparse_config
 )
-
 target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")
 target_link_libraries(Mygen PRIVATE pybind11::module
