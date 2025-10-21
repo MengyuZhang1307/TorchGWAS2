@@ -300,7 +300,8 @@ void NullModel::process_gmmat(const std::string kin_add,
     // Return C2 values
     c2_out = c2;
 
-    print_res(output, pheno_column_names, c2, bgen_sample_id, id_include_vec, output_matrix);
+    print_res(output, pheno_column_names, c2,
+                bgen_sample_id, id_include_vec, output_matrix);
 }
 
  
@@ -635,7 +636,7 @@ void NullModel::print_res(
     std::ext::VV_string const& id_include,
     std::ext::VV_double const& output_matrix)
 {
-    std::ofstream out(output);
+    std::ofstream out("intermediate_" + output);
 
     // Header line: phenotype names
     for (size_t i = 0; i < pheno_column_names.size(); ++i) 

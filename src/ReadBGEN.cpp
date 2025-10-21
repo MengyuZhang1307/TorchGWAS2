@@ -406,7 +406,9 @@ void Bgen13GetTwoVals(const unsigned char* prob_start, uint32_t bit_precision, u
 This function contains code that has been revised based on BOLT-LMM v2.3 source code
 **************************************************************************************************************************/
 
-void Read_bgen_file(std::string const& bgenFile, Bgen bgen, int thread_num, int stream_snps, std::string outFile){   auto start_time = std::chrono::high_resolution_clock::now();
+void Read_bgen_file(std::string const& bgenFile, Bgen bgen, int thread_num, int stream_snps, std::string outFile)
+{   
+    auto start_time = std::chrono::high_resolution_clock::now();
     std::string output = outFile + "_bin_" + std::to_string(thread_num) + ".tmp";
     std::ofstream results(output, std::ofstream::binary);
     std::ostringstream oss;

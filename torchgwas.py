@@ -9,6 +9,7 @@ import math
 import time
 import pandas as pd
 import pyarrow as pa, pyarrow.parquet as pq
+import json
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
@@ -102,7 +103,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     Run GWAS using a pre-configured GEMRunner instance.
     """
  
-    ph_headers, c2_values, corrected_res = read_correction_file("missing-x1-x10.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("intermediateoutAddlie.txt") # read corrected_res, c2 and ph_headers from file
     
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -190,70 +191,159 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     #     df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
     #     df.to_csv("results_buffered.csv", mode="a", header=not os.path.exists("results_buffered.csv"), index=False)
   #####using parquet
+    # start = time.time()
+    # writer = None
+    # for chunk_data in tqdm(queue, desc="Processing SNPs"):
+
+    #     actual_snps = chunk_data.shape[0]
+
+    #     if actual_snps == snps_per_chunk:
+    #         geno = geno_tensor
+    #         beta = beta_tensor
+    #         gamma = gamma_tensor
+    #     else:
+    #         geno = geno_tensor[:actual_snps, :]
+    #         beta = beta_tensor[:actual_snps, :]
+    #         gamma = gamma_tensor[:actual_snps, :]
+
+    #     geno.copy_(torch.from_numpy(chunk_data).float())
+    #     mean, std, t_stats, beta_coeffs, se = calc_t(
+    #         corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre
+    #     )
+
+    #     # Convert to numpy
+    #     b_np  = beta_coeffs.cpu().numpy()  # (num_snps, num_pheno)
+    #     se_np = se.cpu().numpy()           # (num_snps, num_pheno)
+
+    #     # Stack [beta, se] → shape (num_snps, num_pheno, 2)
+    #     all_stats = np.stack([b_np, se_np], axis=2)
+    #     all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
+
+    #     buffer.append(all_stats_2d)
+
+    #     # Flush when buffer full
+    #     if sum(len(x) for x in buffer) >= buffer_size:
+    #         df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
+    #         table = pa.Table.from_pandas(df)
+
+    #         if writer is None:
+    #             writer = pq.ParquetWriter(
+    #                 "results_missing_x1_x10.parquet", table.schema, compression="snappy"
+    #             )
+    #         writer.write_table(table)
+    #         buffer = []
+
+
+    # # Flush remainder
+    # if buffer:
+    #     df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
+    #     table = pa.Table.from_pandas(df)
+    #     if writer is None:
+    #         writer = pq.ParquetWriter(
+    #             "results_missing_x1_x10.parquet", table.schema, compression="snappy"
+    #         )
+    #     writer.write_table(table)
+
+    # # Close writer
+    # if writer:
+    #     writer.close()
+    
+    # end = time.time()
+    # print(f"time for chunck = {end - start}")
+
+    # #Read the parquet file head
+    # df_check = pd.read_parquet("results_missing_x1_x10.parquet")
+    # # Show first 5 rows
+    # print(df_check.head())
+
+    # # Show the column names
+    # print(df_check.columns.tolist())
+ 
+
     start = time.time()
-    writer = None
+
+    # Output and metadata setup
+    out_path = "results_outAddlie.bin"
+    meta = {
+    "cols": len(ph_headers),
+    "total_cols": len(beta_se_headers),
+    "dtype": "float32",
+    "layout": "Beta_SE_rowmajor",
+    "headers": beta_se_headers,        
+    "buffer_flush_rows": 1_000_000,
+    "rows": 0
+    }
+    if os.path.exists(out_path):
+        os.remove(out_path)
+    out_file = open(out_path, "ab")  # append binary
+
+    # Buffers
+    beta_buffer = []
+    se_buffer = []
+    rows_in_buffer = 0
+    total_rows = 0
+
     for chunk_data in tqdm(queue, desc="Processing SNPs"):
-
         actual_snps = chunk_data.shape[0]
+        total_rows += actual_snps
+        rows_in_buffer += actual_snps
 
-        if actual_snps == snps_per_chunk:
-            geno = geno_tensor
-            beta = beta_tensor
-            gamma = gamma_tensor
-        else:
-            geno = geno_tensor[:actual_snps, :]
-            beta = beta_tensor[:actual_snps, :]
-            gamma = gamma_tensor[:actual_snps, :]
+        geno = geno_tensor[:actual_snps, :]
+        beta = beta_tensor[:actual_snps, :]
+        gamma = gamma_tensor[:actual_snps, :]
 
         geno.copy_(torch.from_numpy(chunk_data).float())
         mean, std, t_stats, beta_coeffs, se = calc_t(
             corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre
         )
 
-        # Convert to numpy
-        b_np  = beta_coeffs.cpu().numpy()  # (num_snps, num_pheno)
-        se_np = se.cpu().numpy()           # (num_snps, num_pheno)
-
-        # Stack [beta, se] → shape (num_snps, num_pheno, 2)
+        b_np = beta_coeffs.cpu().numpy().astype(np.float32)
+        se_np = se.cpu().numpy().astype(np.float32)
         all_stats = np.stack([b_np, se_np], axis=2)
         all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
+        beta_buffer.append(all_stats_2d)
 
-        buffer.append(all_stats_2d)
-
-        # Flush when buffer full
-        if sum(len(x) for x in buffer) >= buffer_size:
-            df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
-            table = pa.Table.from_pandas(df)
-
-            if writer is None:
-                writer = pq.ParquetWriter(
-                    "results_missing_x1_x10.parquet", table.schema, compression="snappy"
-                )
-            writer.write_table(table)
-            buffer = []
+        #  Flush every ~1M SNPs
+        if rows_in_buffer >= meta["buffer_flush_rows"]:
+            beta_all = np.vstack(beta_buffer)
+            beta_all.tofile(out_file)
+            beta_buffer.clear()
+            se_buffer.clear()
+            rows_in_buffer = 0  # reset
+            
 
 
-    # Flush remainder
-    if buffer:
-        df = pd.DataFrame(np.vstack(buffer), columns=beta_se_headers)
-        table = pa.Table.from_pandas(df)
-        if writer is None:
-            writer = pq.ParquetWriter(
-                "results_missing_x1_x10.parquet", table.schema, compression="snappy"
-            )
-        writer.write_table(table)
+    if rows_in_buffer > 0:
+        beta_all = np.vstack(beta_buffer)
+        beta_all.tofile(out_file)
+        beta_buffer.clear()
+        se_buffer.clear()
+        rows_in_buffer = 0  #
+        print("There are snps less than buffer size, add them to output")
 
-    # Close writer
-    if writer:
-        writer.close()
-    
+    out_file.close()
+
+    # Write metadata JSON
+    meta["rows"] = total_rows
+    with open("results_outAddlie.meta.json", "w") as f:
+        json.dump(meta, f, indent=2)
+
     end = time.time()
-    print(f"time for chunck = {end - start}")
+    print(f" Done — {total_rows:,} SNPs written in {(end-start):.1f}s")
 
-    #Read the parquet file head
-    df_check = pd.read_parquet("results_missing_x1_x10.parquet")
-    # Show first 5 rows
-    print(df_check.head())
+    # Load metadata
+    with open("results.meta.json") as f:
+        meta = json.load(f)
 
-    # Show the column names
-    print(df_check.columns.tolist())
+    rows = meta["rows"]
+    cols = meta["cols"]
+
+    data = np.fromfile("results_outAddlie.bin", dtype=np.float32)
+
+    # Reshape into (rows, cols*2)
+    data = data.reshape(rows, cols * 2)
+
+    # Print the first 5 rows
+    print("First 5 rows (Beta + SE):")
+    print(data[:5, :14])   
+

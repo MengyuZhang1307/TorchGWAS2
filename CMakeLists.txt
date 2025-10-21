@@ -55,10 +55,8 @@ if(NOT armadillo_POPULATED)
   FetchContent_Populate(armadillo)
   #add_library(armadillo INTERFACE)
   #target_include_directories(armadillo INTERFACE ${armadillo_SOURCE_DIR}/include)
-  # >>> Disable OpenMP in Armadillo (ADD THESE LINES) <<<
   set(ARMA_USE_OPENMP OFF CACHE BOOL "Disable OpenMP in Armadillo")
   add_definitions(-DARMA_DONT_USE_OPENMP)
-  # <<<
   add_subdirectory(${armadillo_SOURCE_DIR} ${armadillo_BINARY_DIR})
 endif()
 # Fetch Eigen=====================================================
@@ -188,9 +186,15 @@ set(SUITESPARSE_LIBRARIES
     ${suitesparse_BINARY_DIR}/AMD/libamd.a
     ${suitesparse_BINARY_DIR}/SuiteSparse_config/libsuitesparseconfig.a
 )
+#nlohmann/json=================================================================
+FetchContent_Declare(
+  json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.11.3   # or latest stable release
+)
 
-# Set executable for Python module ================================
-# set(SOURCES ${SRC} ${CC_SOURCES} ${C_SOURCES})
+FetchContent_MakeAvailable(json)
+# Set executable for Python module ============================================
 add_library(Mygen MODULE ${SOURCES})
 
 target_include_directories(Mygen PRIVATE
@@ -214,6 +218,7 @@ target_link_libraries(Mygen PRIVATE pybind11::module
                   Boost::system
                   Boost::filesystem
                   Boost::program_options
+                  nlohmann_json::nlohmann_json
                   ${SUITESPARSE_LIBRARIES}
                   ${MKL_LIBRARIES})
 set_target_properties(Mygen PROPERTIES PREFIX "")
