@@ -80,9 +80,9 @@ opt = ConfOpt(
     kin_add = "data/kinship.txt",
     kin_delim = ' ',
     kin_diag = 0.5,
-    threads = 90,
-    num_chunks = 90,
-    outfile = "outAddlie.txt"
+    threads = 72,
+    num_chunks = 72,
+    outfile = "out.txt"
 )
 
 # opt = ConfOpt(

@@ -1382,10 +1382,10 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                     if (find(tmp_valvec.begin(), tmp_valvec.end(), MissingKey) == tmp_valvec.end() &&
                         find(tmp_valvec.begin(), tmp_valvec.end(), "") == tmp_valvec.end()) 
                     {     
-                        new_covdata_orig[k * (numSelCol)] = 1.0;
+                        new_covdata_orig[k * (numSelCol + 1)] = 1.0;
                         for (int c = 0; c < numSelCol; c++) 
                         {
-                            sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol) + c]);
+                            sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol + 1) + c + 1]);
                         }
                         sampleID.push_back(strtmp);
                         k++;
@@ -1453,10 +1453,10 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                     if (find(tmp_valvec.begin(), tmp_valvec.end(), MissingKey) == tmp_valvec.end() &&
                         find(tmp_valvec.begin(), tmp_valvec.end(), "") == tmp_valvec.end()) 
                     {     
-                        new_covdata_orig[k * (numSelCol)] = 1.0;
+                        new_covdata_orig[k * (numSelCol + 1)] = 1.0;
                         for (int c = 0; c < numSelCol; c++) 
                         {
-                            sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol) + c]);
+                            sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol + 1) + c + 1]);
                         }
                         sampleID.push_back(strtmp);
                         k++;

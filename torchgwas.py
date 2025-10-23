@@ -40,8 +40,8 @@ def read_correction_file(file_path: str):
 
         for line in f:
             parts = line.strip().split("\t")
-            if len(parts) >= 3:
-                c_res.append([float(x) for x in parts[2:]])
+            if len(parts) >= 2:
+                c_res.append([float(x) for x in parts[1:]])
 
     c_res = np.array(c_res, dtype=np.float64)
 
@@ -103,7 +103,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     Run GWAS using a pre-configured GEMRunner instance.
     """
  
-    ph_headers, c2_values, corrected_res = read_correction_file("intermediateoutAddlie.txt") # read corrected_res, c2 and ph_headers from file
+    ph_headers, c2_values, corrected_res = read_correction_file("intermediate_out.txt") # read corrected_res, c2 and ph_headers from file
     
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -263,7 +263,7 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
     start = time.time()
 
     # Output and metadata setup
-    out_path = "results_outAddlie.bin"
+    out_path = "results_ADD.bin"
     meta = {
     "cols": len(ph_headers),
     "total_cols": len(beta_se_headers),
@@ -325,20 +325,20 @@ def run_gwas(runner, snps_per_chunk=1000, device='cuda',  compress=False):
 
     # Write metadata JSON
     meta["rows"] = total_rows
-    with open("results_outAddlie.meta.json", "w") as f:
+    with open("results_ADD.meta.json", "w") as f:
         json.dump(meta, f, indent=2)
 
     end = time.time()
     print(f" Done — {total_rows:,} SNPs written in {(end-start):.1f}s")
 
     # Load metadata
-    with open("results.meta.json") as f:
+    with open("results_ADD.meta.json") as f:
         meta = json.load(f)
 
     rows = meta["rows"]
     cols = meta["cols"]
 
-    data = np.fromfile("results_outAddlie.bin", dtype=np.float32)
+    data = np.fromfile("results_ADD.bin", dtype=np.float32)
 
     # Reshape into (rows, cols*2)
     data = data.reshape(rows, cols * 2)

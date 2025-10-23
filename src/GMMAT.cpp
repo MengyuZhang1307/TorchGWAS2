@@ -1361,13 +1361,12 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         pheno_valid_indices, true); 
     m_vkins_sp.push_back(std::move(sp_missing));
 
-    {
-        SparseInverse sp(cov_copy, kin_add, kin_delim, 
+    { 
+        SparseInverse sp(cov_copy, kin_add, kin_delim, //define scop to free kinship space
             kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
             pheno_valid_indices, false); //sp without removing missing pheno value
         spm_diag_nomiss = sp.get_spmat().diagonal().sum();
         spm_nomiss_dim = sp.get_spmat().cols();
-        std::cout << "spm_nomiss_dim " << spm_nomiss_dim;
     }
     
     std::ext::V_double new_y;

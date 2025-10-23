@@ -242,47 +242,56 @@ void DataFrame:: remove_missing(std::ext::V_string const& v_hdrs, std::ext::V_in
     }
     m_nrows = m_data[m_headers[0]].size();
 }
-//Remove rows with missing data and match phenoIDs with genofile IDs
-void DataFrame::match_genoids(std::string hdr_id, std::ext::V_string const& v_hdrs)
+
+
+void DataFrame::match_genoids(std::string hdr_id, const std::ext::V_string& v_hdrs)
 {
-    // Convert m_geno_IDs(bgenIDs) to an unordered set for fast lookup
-    std::unordered_set<std::string> geno_id_set(m_geno_ids.begin(), m_geno_ids.end());
+    // m_geno_ids: vector of BGEN sample IDs in correct order
     const std::ext::V_string& sam_ids = m_data[hdr_id];
-    std::vector<int> keep_indices;
 
+    // Map from sample ID to cov row index
+    std::unordered_map<std::string, int> cov_index_map;
+    cov_index_map.reserve(sam_ids.size());
     for (int i = 0; i < sam_ids.size(); ++i)
-    {
-        if (geno_id_set.count(sam_ids[i]) > 0)
-        {
-            keep_indices.push_back(i);
-        } 
-    }
+        cov_index_map[sam_ids[i]] = i;
 
-    for (int idx : keep_indices)
-    {
-        bool is_valid_row = true;
+    std::vector<int> matched_indices;  // cov row indices in BGEN order
+    matched_indices.reserve(m_geno_ids.size());
 
+    // For each BGEN sample ID (preserving BGEN order)
+    for (size_t b = 0; b < m_geno_ids.size(); ++b)
+    {
+        const auto& bid = m_geno_ids[b];
+        auto it = cov_index_map.find(bid);
+        if (it == cov_index_map.end()) continue;  // skip samples not found in cov file
+
+        int cov_idx = it->second;
+
+        // Check if all covariate headers have non-missing values
+        bool is_valid = true;
         for (const auto& hdr : v_hdrs)
         {
-            auto it = m_data.find(hdr);
-            if (it != m_data.end())
+            auto it_hdr = m_data.find(hdr);
+            if (it_hdr != m_data.end() && cov_idx < it_hdr->second.size())
             {
-                if (idx < it->second.size() && it->second[idx] == m_missing_key) //check missing value as well
+                if (it_hdr->second[cov_idx] == m_missing_key)
                 {
-                    // std::cerr << "Warning: missing value at row: " << idx + 1 << " for header: " << hdr << "\n";
-                    is_valid_row = false; // If there's any missing value, mark the row as invalid
-                    break; // No need to check further headers for this row
+                    is_valid = false;
+                    break;
                 }
             }
         }
 
-        if (is_valid_row)
-        {
-            m_valid_indices.push_back(idx);
-        }
+        if (is_valid)
+            matched_indices.push_back(cov_idx);
     }
+
+    // Update valid indices in covariate file based on BGEN order
+    m_valid_indices = std::move(matched_indices);
     remove_missing(v_hdrs, m_valid_indices);
 }
+
+
 
 
 DataFrame DataFrame::copy_by_hdrs(std::ext::V_string const& v_hdrs)

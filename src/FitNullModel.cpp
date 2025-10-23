@@ -55,7 +55,6 @@ void NullModel::process_phenotype_file(Cov& cov)
     std::string col_name;
     int row_indx = 0;
     int col_indx = 0;
-    int hdr_id_indx;
     
     while (std::getline(ss, col_name, opt.pheno_delim)) 
     {
@@ -106,7 +105,6 @@ void NullModel::process_phenotype_file(Cov& cov)
         if (values.size() < num_columns) 
         {
             values.resize(num_columns, opt.missing_key);
-
         }
 
         if (row_indx >= cov.m_data_frame.m_data[cov.m_sam_id_hdr].size())
@@ -136,37 +134,56 @@ void NullModel::process_phenotype_file(Cov& cov)
 
 void NullModel::filter_pheno_by_cov(const Cov& cov)
 {
+    
     fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
-    const auto& kept = cov.m_data_frame.m_valid_indices;
+    const auto& kept_idx = cov.m_data_frame.m_data.at(cov.m_sam_id_hdr);
     const int num_traits = pheno_column_names.size() - 2;
+    std::unordered_map<std::string, int> ph_id_map;
+    ph_id_map.reserve(kept_idx.size());
+    for (int i = 0; i < pheno_raw.size(); ++i)
+        ph_id_map[pheno_raw[i][hdr_id_indx]] = i;
+    
+    // Prepare output files for streaming
+    std::ofstream data_out("pheno_valid_indices.bin", std::ios::binary);
+    std::ofstream meta_out("pheno_valid_indices.meta");
+    uint64_t offset = 0;
+    
+    if (!data_out || !meta_out)
+    {
+        throw std::runtime_error("Cannot open valid-index files");
+    }
 
     phenotype_data.assign(num_traits, {});
     pheno_valid_indices.assign(num_traits, {});
 
-     for (int t = 0; t < num_traits; ++t) 
-     {
-        phenotype_data[t].reserve(kept.size());       // each trait will have kept.size() rows
-        pheno_valid_indices[t].reserve(kept.size()); 
+    for (int t = 0; t < num_traits; ++t) 
+    {
+        phenotype_data[t].reserve(kept_idx.size());       // each trait will have kept.size() rows
+        pheno_valid_indices[t].reserve(kept_idx.size()); 
     }
 
-    for (auto idx : kept) 
+    for (auto idx : kept_idx) 
     {
-        const auto& row = pheno_raw[idx];  // full row: FID, IID, traits...
-
-        for (int t = 0; t < num_traits; ++t) 
+        auto it = ph_id_map.find(idx);
+        if (it != ph_id_map.end())
         {
-            const std::string& v = row[t + 2]; // traits start at col 2
+            const auto& row = pheno_raw[it->second];  // search id in phenotype line
+            
+            for (int t = 0; t < num_traits; ++t) 
+            {
+                const std::string& v = row[t + 2]; // traits start at col 2
 
-            if (v.empty() || v == opt.missing_key) 
-            {
-                // store missing placeholder
-                phenotype_data[t].push_back(opt.missing_key);
-            } 
-            else 
-            {
-                phenotype_data[t].push_back(v);
-                // record index of valid observation 
-                pheno_valid_indices[t].push_back(phenotype_data[t].size() - 1); 
+                if (v.empty() || v == opt.missing_key) 
+                {
+                    // store missing placeholder
+                    phenotype_data[t].push_back(opt.missing_key);
+                } 
+                else 
+                {
+                    phenotype_data[t].push_back(v);
+                    // record index of valid observation 
+                    pheno_valid_indices[t].push_back(phenotype_data[t].size() - 1); 
+                }
             }
         }
     }
@@ -175,10 +192,10 @@ void NullModel::filter_pheno_by_cov(const Cov& cov)
     fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
     std::cout << "****************************************************************************\n";
     pheno_raw.clear();
-    pheno_raw.shrink_to_fit();
+    pheno_raw.shrink_to_fit();//free the unused memory
 }
 
- 
+
 Cov NullModel::setup_cov_pheno(std::string const& cov_add,
                         char const cov_delim,
                         std::string const& sampleid_header_name,
@@ -637,9 +654,9 @@ void NullModel::print_res(
     std::ext::VV_double const& output_matrix)
 {
     std::ofstream out("intermediate_" + output);
-
+    out << "smaple_id" << '\t';
     // Header line: phenotype names
-    for (size_t i = 0; i < pheno_column_names.size(); ++i) 
+    for (size_t i = 2; i < pheno_column_names.size(); ++i) 
     {
         out << pheno_column_names[i];
         if (i != pheno_column_names.size() - 1) out << '\t';
@@ -667,7 +684,7 @@ void NullModel::print_res(
     // Main loop over all samples
     for (size_t row = 0; row < bgen_sample_id.size(); ++row) 
     {
-        out << bgen_sample_id[row] << '\t' << bgen_sample_id[row];
+        out << bgen_sample_id[row];
 
         // check each phenotype
         for (size_t ph = 0; ph < pheno_column_names.size() - 2; ++ph) 

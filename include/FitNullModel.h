@@ -20,11 +20,12 @@ void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat,
 class NullModel 
 {
     private:
-        GEMOptions opt;
-        std::vector<std::ext::V_int> pheno_valid_indices;
+        GEMOptions opt; 
+        std::ext::VV_int pheno_valid_indices;
         std::ext::V_string pheno_column_names;
         std::ext::VV_string phenotype_data;
         std::ext::VV_string pheno_raw;
+        int hdr_id_indx;
         
     public:
         explicit NullModel(GEMOptions const& user_opt);
