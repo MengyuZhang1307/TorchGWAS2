@@ -5,9 +5,20 @@
 #include <mutex>
 #include <condition_variable>
 #include <deque>
+#include "ReadFiles.h"
 
-struct Chunk {
+struct Chunk 
+{
     std::shared_ptr<float> data; // contiguous buffer of size rows*cols
+    std::ext::V_string snpid;
+    std::ext::V_string rsid;
+    std::ext::V_string chr;
+    std::ext::V_string pos;
+    std::ext::V_string allele0;
+    std::ext::V_string allele1;
+    std::ext::V_string n_samples;
+    std::vector<float> af;
+    std::vector<float> gv;
     std::size_t rows = 0;
     std::size_t cols = 0;
 };
