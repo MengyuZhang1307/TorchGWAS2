@@ -7,21 +7,30 @@ class ConfOpt:
 
     def set(self, **kwargs):
         for k, v in kwargs.items():
+            if v is None:
+                continue
             if hasattr(self._opt, k):
                 setattr(self._opt, k, v)
             else:
                 raise ValueError(f"Invalid GEMOptions field: '{k}'")
 
-        if self._opt.threads > self._opt.num_chunks:
-            raise ValueError(f"Threads {self._opt.threads} cannot be greater than num_chunks {self._opt.num_chunks}")
-
+        # if self._opt.threads > 0 and self._opt.num_chunks > 0:
+        #     if self._opt.threads > self._opt.num_chunks:
+        #         raise ValueError(
+        #             f"Threads {self._opt.threads} cannot be greater than num_chunks {self._opt.num_chunks}"
+        #         )
     # def __getattr__(self, name):
     #     # only called if attribute not found in ConfOpt
     #     return getattr(self._opt, name)
 
+
     def get(self):
         return self._opt
     
+    @property
+    def outfile(self):
+        return self._opt.outfile
+        
     @property
     def chunk_size(self):
         return self._opt.num_chunks
@@ -33,6 +42,3 @@ class ConfOpt:
     @property
     def stream_snps(self):
         return self._opt.stream_snps
-
-    def __repr__(self):
-        return f"<GEMConfig with threads={self._opt.threads}, pheno_file={self._opt.pheno_file}>"

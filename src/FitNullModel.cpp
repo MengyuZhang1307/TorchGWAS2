@@ -132,7 +132,7 @@ void NullModel::process_phenotype_file(Cov& cov)
         }
 }
 
-void NullModel::filter_pheno_by_cov(const Cov& cov)
+void NullModel::filter_pheno_by_cov(Cov const& cov)
 {
     
     fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
@@ -664,7 +664,7 @@ void NullModel::print_res(
     out << '\n';
 
     // Correlation row
-    out << '#' << '\t' << '#';
+    out << '#';
     for (auto cor : c2) 
     {
         out << '\t' << cor;

@@ -47,19 +47,18 @@ PYBIND11_MODULE(Mygen, m)
         .def_readwrite("sampleid_header_name", &GEMOptions::sampleid_header_name)
         .def_readwrite("random_slope_header_name", &GEMOptions::random_slope_header_name)
         .def_readwrite("covariates", &GEMOptions::covariates)
-        .def_readwrite("exposures", &GEMOptions::exposures)
-        .def_readwrite("interactions", &GEMOptions::interactions)
         .def_readwrite("missing_key", &GEMOptions::missing_key)
         .def_readwrite("kin_add", &GEMOptions::kin_add)
         .def_readwrite("kin_delim", &GEMOptions::kin_delim)
         .def_readwrite("kin_diag", &GEMOptions::kin_diag)
         .def_readwrite("threads", &GEMOptions::threads)
-        .def_readwrite("num_chunks", &GEMOptions::num_chunks)
+        // .def_readwrite("num_chunks", &GEMOptions::num_chunks)
         .def_readwrite("outfile", &GEMOptions::outfile);
         
         // Bind GEMRunner
         py::class_<GEMRunner>(m, "GEMRunner")
             .def(py::init<const GEMOptions&>())  // constructor
+            .def_readonly("opt", &GEMRunner::opt)
             .def("run_fit_nullmodel", &GEMRunner::run_fit_nullmodel)
             
             // Get C2 values from null model fitting
@@ -119,7 +118,8 @@ PYBIND11_MODULE(Mygen, m)
 }
 // Local helper to convert a Chunk to a zero-copy NumPy array with correct lifetime
 namespace {
-    inline py::array_t<float> chunk_to_numpy(const Chunk& c) {
+    inline py::array_t<float> chunk_to_numpy(const Chunk& c) 
+    {
         float* ptr = c.data.get();
         // Keep the buffer alive by attaching a shared_ptr<float> into a capsule
         auto owner = new std::shared_ptr<float>(c.data);

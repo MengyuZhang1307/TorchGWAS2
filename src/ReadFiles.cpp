@@ -244,7 +244,7 @@ void DataFrame:: remove_missing(std::ext::V_string const& v_hdrs, std::ext::V_in
 }
 
 
-void DataFrame::match_genoids(std::string hdr_id, const std::ext::V_string& v_hdrs)
+void DataFrame::match_genoids(std::string hdr_id, std::ext::V_string const& v_hdrs)
 {
     // m_geno_ids: vector of BGEN sample IDs in correct order
     const std::ext::V_string& sam_ids = m_data[hdr_id];
