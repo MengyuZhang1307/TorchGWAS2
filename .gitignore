@@ -1,3 +1,16 @@
 build1/
 build/
 build*
+pymodules/__pycache__/ConfigueOpt.cpython-312.pyc
+pymodules/__pycache__/__init__.cpython-312.pyc
+*.txt
+*.bin
+*.json
+*.meta.json
+*.log
+outputs/
+missing-simulationbyMengyu/
+__pycache__/
+data/
+example/
+*.meta
