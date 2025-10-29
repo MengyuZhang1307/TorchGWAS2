@@ -2,7 +2,7 @@
 
 import sys
 import pandas as pd
-sys.path.append("build-test")  
+sys.path.append("build-test1")  
 sys.path.append("pymodules")  
 from pymodules import ConfOpt
 from TorchGWAS import run_gwas

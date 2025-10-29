@@ -415,7 +415,7 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 double gmean  = AF[stream_i] / double(samSize - nmiss);
                 gsqmean /= static_cast<double>(samSize - nmiss);
                 double cur_AF = gmean / 2.0 ;
-                double var = (gsqmean - gmean * gmean) * static_cast<double>(samSize - nmiss) / static_cast<double>(samSize - nmiss - 1);
+                double gvar = (gsqmean - gmean * gmean) * static_cast<double>(samSize - nmiss) / static_cast<double>(samSize - nmiss - 1);
 
                 if ((cur_AF < MAF || cur_AF > maxMAF) ) 
                 { 
@@ -440,6 +440,9 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 current_chunk.allele1.push_back(std::string(allele1.data(), allele1.size()));
                 current_chunk.allele0.push_back(std::string(allele0.data(), allele0.size()));
                 current_chunk.n_samples.push_back(std::to_string(samSize - nmiss));
+                current_chunk.af.push_back(cur_AF);
+                current_chunk.gv.push_back(gvar);
+
 
                 if (row_in_chunk == snps_per_chunk) 
                 {
@@ -456,6 +459,16 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                     chunk_buf.reset(new (std::nothrow) float[static_cast<size_t>(snps_per_chunk) * static_cast<size_t>(samSize)], std::default_delete<float[]>());
                     if (!chunk_buf) { stop = true; break; }
                     row_in_chunk = 0;
+
+                    current_chunk.snpid.clear();
+                    current_chunk.rsid.clear();
+                    current_chunk.chr.clear();
+                    current_chunk.pos.clear();
+                    current_chunk.allele0.clear();
+                    current_chunk.allele1.clear();
+                    current_chunk.n_samples.clear();
+                    current_chunk.af.clear();
+                    current_chunk.gv.clear();
                 }
                 
                 snploop++;

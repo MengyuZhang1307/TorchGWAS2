@@ -234,8 +234,8 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
     # # Print the first 5 rows
     # print("First 5 rows (Beta + SE + pvalue):")
     # print(data[:5, :20])   
-
-    buffer_size = 500_000
+    writer = None 
+    buffer_size = 100_000
     rows_in_buffer = 0
     buffer = []
     headers = [
@@ -299,14 +299,7 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         
         if rows_in_buffer >= buffer_size:
             # Vertically stack all arrays from the buffer
-            stacked = np.vstack(buffer).astype(np.float32, copy=False)
-
-            # Create a DataFrame (column names already known)
-            df = pd.DataFrame(stacked, columns=headers)
-
-            # Convert all numeric columns explicitly to float32 (for safety)
-            df = df.astype(np.float32, copy=False)
-
+            df = pd.concat(buffer, ignore_index=True)
             # Convert to Arrow Table and write to Parquet
             table = pa.Table.from_pandas(df, preserve_index=False)
             if writer is None:
@@ -320,11 +313,11 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
             buffer.clear()
     # flush remainder
     if buffer:
-        stacked = np.vstack(buffer).astype(np.float32, copy=False)
+        df = pd.concat(buffer, ignore_index=True)
         # Create a DataFrame (column names already known)
-        df = pd.DataFrame(stacked, columns=headers)
+        # df = pd.DataFrame(stacked, columns=headers)
         # Convert all numeric columns explicitly to float32 (for safety)
-        df = df.astype(np.float32, copy=False)
+        # df = df.astype(np.float32, copy=False)
         table = pa.Table.from_pandas(df, preserve_index=False)
         if writer is None:
             writer = pq.ParquetWriter(
