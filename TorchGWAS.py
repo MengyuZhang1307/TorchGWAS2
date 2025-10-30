@@ -265,7 +265,26 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         os.remove(out_path)
     out = open(out_path, "ab")  # append binary
     print("Line number:", inspect.currentframe().f_lineno)
-    for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
+    for chunk_data in tqdm(queue, desc="Processing SNPs"):
+        
+        # for i, (chunk_data, meta) in enumerate(tqdm(queue, desc="Processing SNPs")):
+            
+            # print("\nMeta structure:")
+            # for k, v in meta.items():
+            #     # detect type and size
+            #     t = type(v)
+            #     n = len(v) if hasattr(v, "__len__") else "-"
+            #     try:
+            #         if isinstance(v, np.ndarray):
+            #             b = v.nbytes
+            #         elif isinstance(v, (list, tuple)):
+            #             b = sum(sys.getsizeof(x) for x in v)
+            #         else:
+            #             b = sys.getsizeof(v)
+            #     except Exception:
+            #         b = "?"
+            #     print(f"  {k:<15} | type: {t.__name__:<15} | len: {n:<8} | bytes: {b}")
+        
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
 
@@ -284,40 +303,40 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         # all_stats = np.stack([b_np, se_np], axis=2)
         # pvals = 2 * torch.special.ndtr(t_stats)
         neg_log10_pval = -(torch.log(torch.tensor(2.0)) + torch.special.log_ndtr(t_stats)) / torch.log(torch.tensor(10.0))
-        # all_stats = np.stack([b_np, se_np, neg_log10_pval], axis=2)
-        # all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
+        all_stats = np.stack([b_np, se_np, neg_log10_pval], axis=2)
+        all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
         # Convert metadata and stats to DataFrame
         # df_meta = pd.DataFrame(meta)
-        # df_stats = pd.DataFrame(
-        #     all_stats_2d,
-        #     columns=[f"{ph}_BETA" for ph in ph_headers] +
-        #             [f"{ph}_SE" for ph in ph_headers] +
-        #             [f"{ph}_pvalue" for ph in ph_headers]
-        # )
+        df_stats = pd.DataFrame(
+            all_stats_2d,
+            columns=[f"{ph}_BETA" for ph in ph_headers] +
+                    [f"{ph}_SE" for ph in ph_headers] +
+                    [f"{ph}_pvalue" for ph in ph_headers]
+        )
         # df = pd.concat([df_meta, df_stats], axis=1)
 
-        # buffer.append(df_stats)
-        all_stats = np.concatenate([b_np, se_np, neg_log10_pval], axis=1)
-        meta_arrays = {k: pa.array(v) for k, v in meta.items()}
+        buffer.append(df_stats)
+        # all_stats = np.concatenate([b_np, se_np, neg_log10_pval], axis=1)
+        # meta_arrays = {k: pa.array(v) for k, v in meta.items()}
 
     # Numeric fields
-        stat_arrays = {
-            **{f"{ph}_BETA": pa.array(all_stats[:, i]) for i, ph in enumerate(ph_headers)},
-            **{f"{ph}_SE": pa.array(all_stats[:, i + len(ph_headers)]) for i, ph in enumerate(ph_headers)},
-            **{f"{ph}_pvalue": pa.array(all_stats[:, i + 2 * len(ph_headers)]) for i, ph in enumerate(ph_headers)},
-        }
+        # stat_arrays = {
+        #     **{f"{ph}_BETA": pa.array(all_stats[:, i]) for i, ph in enumerate(ph_headers)},
+        #     **{f"{ph}_SE": pa.array(all_stats[:, i + len(ph_headers)]) for i, ph in enumerate(ph_headers)},
+        #     **{f"{ph}_pvalue": pa.array(all_stats[:, i + 2 * len(ph_headers)]) for i, ph in enumerate(ph_headers)},
+        # }
 
         # Merge all columns
-        table = pa.Table.from_pydict({**meta_arrays, **stat_arrays})
-        buffer_tables.append(table)
+        # table = pa.Table.from_pydict({**meta_arrays, **stat_arrays})
+        # buffer_tables.append(table)
         if rows_in_buffer >= buffer_size:
             print("Line number:", inspect.currentframe().f_lineno)
             # Vertically stack all arrays from the buffer
-            # df = pd.concat(buffer, ignore_index=True)
-            table = pa.concat_tables(buffer_tables, promote=True)
+            df = pd.concat(buffer, ignore_index=True)
+            # table = pa.concat_tables(buffer_tables, promote=True)
             print("Line number:", inspect.currentframe().f_lineno)
             # Convert to Arrow Table and write to Parquet
-            # table = pa.Table.from_pandas(df, preserve_index=False)
+            table = pa.Table.from_pandas(df, preserve_index=False)
             print("Line number:", inspect.currentframe().f_lineno)
             if writer is None:
                 writer = pq.ParquetWriter(
@@ -332,13 +351,13 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
     # flush remainder
     if buffer_tables:
         print("")
-        # df = pd.concat(buffer, ignore_index=True)
-        table = pa.concat_tables(buffer_tables, promote=True)
+        df = pd.concat(buffer, ignore_index=True)
+        # table = pa.concat_tables(buffer_tables, promote=True)
         # Create a DataFrame (column names already known)
         # df = pd.DataFrame(stacked, columns=headers)
         # Convert all numeric columns explicitly to float32 (for safety)
         # df = df.astype(np.float32, copy=False)
-        # table = pa.Table.from_pandas(df, preserve_index=False)
+        table = pa.Table.from_pandas(df, preserve_index=False)
         if writer is None:
             writer = pq.ParquetWriter(
                 out_path + ".parquet", table.schema, compression="snappy"
