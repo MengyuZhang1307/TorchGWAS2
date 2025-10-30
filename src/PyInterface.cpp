@@ -107,7 +107,7 @@ PYBIND11_MODULE(Mygen, m)
     py::class_<DosageStream>(m, "DosageStream")
         .def("close", [](DosageStream& s){ if (s.q) s.q->close(); })
         .def("__iter__", [](DosageStream& self) -> DosageStream& { return self; }, py::return_value_policy::reference_internal)
-        .def("__next__", [](DosageStream& s) -> py::array_t<float> {
+        .def("__next__", [](DosageStream& s) -> py::tuple {
             if (!s.q) throw py::stop_iteration();
             Chunk c;
             if (!s.q->pop(c)) {
@@ -118,18 +118,18 @@ PYBIND11_MODULE(Mygen, m)
 
         // --- Convert metadata vectors to Python dict ---
         py::dict meta;
-        // meta["SNPID"]          = c.snpid;
-        // meta["RSID"]           = c.rsid;
-        // meta["CHR"]            = c.chr;
-        // meta["POS"]            = c.pos;
-        // meta["Non_Effect_Allele"] = c.allele0;
-        // meta["Effect_Allele"]  = c.allele1;
-        // meta["N_Samples"]      = c.n_samples;
-        // meta["AF"]             = c.af;
-        // meta["GV"]             = c.gv;
+        meta["SNPID"]          = c.snpid;
+        meta["RSID"]           = c.rsid;
+        meta["CHR"]            = c.chr;
+        meta["POS"]            = c.pos;
+        meta["Non_Effect_Allele"] = c.allele0;
+        meta["Effect_Allele"]  = c.allele1;
+        meta["N_Samples"]      = c.n_samples;
+        meta["AF"]             = c.af;
+        meta["GV"]             = c.gv;
 
-        return dosage;
-        // return py::make_tuple(dosage, meta);
+        // return dosage;
+        return py::make_tuple(dosage, meta);
         });
 }
 // Local helper to convert a Chunk to a zero-copy NumPy array with correct lifetime

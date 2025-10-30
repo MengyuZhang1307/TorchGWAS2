@@ -4,10 +4,10 @@ pd.set_option('display.max_columns', None)
 # Show all rows (optional)
 pd.set_option('display.max_rows', None)
 # Read the parquet file
-df = pd.read_parquet("TGWASmissing-x1-x10.parquet")
+df = pd.read_parquet("TGWASmissing-x1-x10-TorchGWASbranch-withmeta.txt.parquet")
 print("Rows:", df.shape[0])
 print("Columns:", df.shape[1])
-print(df.iloc[1:3, :])
+print(df.head(5))
 # Loop through columns in pairs
 # for i in range(0, 13, 2): #df.shape[1]
 #     # Select two columns at a time

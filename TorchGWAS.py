@@ -241,16 +241,17 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
     rows_in_buffer = 0
     buffer = []
     headers = [
-    "SNPID",
-    "RSID",
-    "CHR",
-    "POS",
-    "Non_Effect_Allele",
-    "Effect_Allele",
-    "N_Samples",
-    "AF",
-    "GV"
+    # "SNPID",
+    # "RSID",
+    # "CHR",
+    # "POS",
+    # "Non_Effect_Allele",
+    # "Effect_Allele",
+    # "N_Samples",
+    # "AF",
+    # "GV"
     ]
+
     for ph in ph_headers:
         headers.append(f"{ph}_BETA")
         headers.append(f"{ph}_SE")
@@ -263,31 +264,31 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
  
     if os.path.exists(out_path):
         os.remove(out_path)
-    out = open(out_path, "ab")  # append binary
-    print("Line number:", inspect.currentframe().f_lineno)
-    for chunk_data in tqdm(queue, desc="Processing SNPs"):
+    # out = open(out_path, "ab")  # append binary
+    # print("Line number:", inspect.currentframe().f_lineno)
+    for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
         
         # for i, (chunk_data, meta) in enumerate(tqdm(queue, desc="Processing SNPs")):
-            
-            # print("\nMeta structure:")
-            # for k, v in meta.items():
-            #     # detect type and size
-            #     t = type(v)
-            #     n = len(v) if hasattr(v, "__len__") else "-"
-            #     try:
-            #         if isinstance(v, np.ndarray):
-            #             b = v.nbytes
-            #         elif isinstance(v, (list, tuple)):
-            #             b = sum(sys.getsizeof(x) for x in v)
-            #         else:
-            #             b = sys.getsizeof(v)
-            #     except Exception:
-            #         b = "?"
-            #     print(f"  {k:<15} | type: {t.__name__:<15} | len: {n:<8} | bytes: {b}")
+        #     if i == 0:
+        #         print("\nMeta structure:")
+        #         for k, v in meta.items():
+        #             # detect type and size
+        #             t = type(v)
+        #             n = len(v) if hasattr(v, "__len__") else "-"
+        #             try:
+        #                 if isinstance(v, np.ndarray):
+        #                     b = v.nbytes
+        #                 elif isinstance(v, (list, tuple)):
+        #                     b = sum(sys.getsizeof(x) for x in v)
+        #                 else:
+        #                     b = sys.getsizeof(v)
+        #             except Exception:
+        #                 b = "?"
+        #             print(f"  {k:<15} | type: {t.__name__:<15} | len: {n:<8} | bytes: {b}")
         
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
-
+        # print(f"actual_snps{actual_snps}")
         geno = geno_tensor[:actual_snps, :]
         beta = beta_tensor[:actual_snps, :]
         gamma = gamma_tensor[:actual_snps, :]
@@ -306,16 +307,15 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         all_stats = np.stack([b_np, se_np, neg_log10_pval], axis=2)
         all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
         # Convert metadata and stats to DataFrame
-        # df_meta = pd.DataFrame(meta)
+        df_meta = pd.DataFrame(meta)
+        
         df_stats = pd.DataFrame(
             all_stats_2d,
-            columns=[f"{ph}_BETA" for ph in ph_headers] +
-                    [f"{ph}_SE" for ph in ph_headers] +
-                    [f"{ph}_pvalue" for ph in ph_headers]
+            columns=headers
         )
-        # df = pd.concat([df_meta, df_stats], axis=1)
-
-        buffer.append(df_stats)
+        df = pd.concat([df_meta, df_stats], axis=1)
+      
+        buffer.append(df)
         # all_stats = np.concatenate([b_np, se_np, neg_log10_pval], axis=1)
         # meta_arrays = {k: pa.array(v) for k, v in meta.items()}
 
@@ -330,27 +330,26 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         # table = pa.Table.from_pydict({**meta_arrays, **stat_arrays})
         # buffer_tables.append(table)
         if rows_in_buffer >= buffer_size:
-            print("Line number:", inspect.currentframe().f_lineno)
+            # print("Line number:", inspect.currentframe().f_lineno)
             # Vertically stack all arrays from the buffer
             df = pd.concat(buffer, ignore_index=True)
             # table = pa.concat_tables(buffer_tables, promote=True)
-            print("Line number:", inspect.currentframe().f_lineno)
+            # print("Line number:", inspect.currentframe().f_lineno)
             # Convert to Arrow Table and write to Parquet
             table = pa.Table.from_pandas(df, preserve_index=False)
-            print("Line number:", inspect.currentframe().f_lineno)
+            # print("Line number:", inspect.currentframe().f_lineno)
             if writer is None:
                 writer = pq.ParquetWriter(
                 out_path + ".parquet", table.schema, compression="snappy"
             )
-            print("Line number:", inspect.currentframe().f_lineno)
+            # print("Line number:", inspect.currentframe().f_lineno)
             writer.write_table(table)
             rows_in_buffer = 0
             # Clear buffer after writing
             buffer.clear()
-            buffer_tables.clear()
+            # buffer_tables.clear()
     # flush remainder
-    if buffer_tables:
-        print("")
+    if buffer:
         df = pd.concat(buffer, ignore_index=True)
         # table = pa.concat_tables(buffer_tables, promote=True)
         # Create a DataFrame (column names already known)
