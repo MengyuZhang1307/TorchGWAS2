@@ -11,7 +11,8 @@ import pandas as pd
 import pyarrow as pa, pyarrow.parquet as pq
 import json
 import inspect
-
+import gc
+import pyarrow.feather as feather
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add path for GEM module
 # sys.path.append("build_test")
@@ -138,43 +139,58 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
     beta_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     gamma_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     
-  
-    # # buffer_size = 500_000
+    # writer = None 
+    # buffer_size = 100_000
+    # rows_in_buffer = 0
     # buffer = []
-    # beta_se_headers = []
+    # headers = [
+    # # "SNPID",
+    # # "RSID",
+    # # "CHR",
+    # # "POS",
+    # # "Non_Effect_Allele",
+    # # "Effect_Allele",
+    # # "N_Samples",
+    # # "AF",
+    # # "GV"
+    # ]
+
     # for ph in ph_headers:
-    #     beta_se_headers.append(f"{ph}_BETA")
-    #     beta_se_headers.append(f"{ph}_SE")
-    #     beta_se_headers.append(f"{ph}_pvalue")
+    #     headers.append(f"{ph}_BETA")
+    #     headers.append(f"{ph}_SE")
+    #     headers.append(f"{ph}_pvalue")
 
     # start = time.time()
 
     # # Output and metadata setup
     # out_path = "TGWAS" + out_file
-    # meta = {
-    # "cols": len(ph_headers),
-    # "total_cols": len(beta_se_headers),
-    # "dtype": "float32",
-    # "layout": "Beta_SE_rowmajor",
-    # "headers": beta_se_headers,        
-    # "buffer_flush_rows": 100_000,
-    # "rows": 0
-    # }
-
+ 
     # if os.path.exists(out_path):
     #     os.remove(out_path)
-    # out = open(out_path, "ab")  # append binary
-
-    # # Buffers
-    # buffer = []
-    # rows_in_buffer = 0
-    # total_rows = 0
-
-    # for chunk_data in tqdm(queue, desc="Processing SNPs"):
+   
+    # for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
+        
+    #     # for i, (chunk_data, meta) in enumerate(tqdm(queue, desc="Processing SNPs")):
+    #     #     if i == 0:
+    #     #         print("\nMeta structure:")
+    #     #         for k, v in meta.items():
+    #     #             # detect type and size
+    #     #             t = type(v)
+    #     #             n = len(v) if hasattr(v, "__len__") else "-"
+    #     #             try:
+    #     #                 if isinstance(v, np.ndarray):
+    #     #                     b = v.nbytes
+    #     #                 elif isinstance(v, (list, tuple)):
+    #     #                     b = sum(sys.getsizeof(x) for x in v)
+    #     #                 else:
+    #     #                     b = sys.getsizeof(v)
+    #     #             except Exception:
+    #     #                 b = "?"
+    #     #             print(f"  {k:<15} | type: {t.__name__:<15} | len: {n:<8} | bytes: {b}")
+        
     #     actual_snps = chunk_data.shape[0]
-    #     total_rows += actual_snps
     #     rows_in_buffer += actual_snps
-
+    #     # print(f"actual_snps{actual_snps}")
     #     geno = geno_tensor[:actual_snps, :]
     #     beta = beta_tensor[:actual_snps, :]
     #     gamma = gamma_tensor[:actual_snps, :]
@@ -187,69 +203,78 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
     #     b_np = beta_coeffs.cpu().numpy().astype(np.float32)
     #     se_np = se.cpu().numpy().astype(np.float32)
     #     t_stats_bp = t_stats.numpy().astype(np.float32)
-    #     # all_stats = np.stack([b_np, se_np], axis=2)
-    #     # pvals = 2 * torch.special.ndtr(t_stats)
     #     neg_log10_pval = -(torch.log(torch.tensor(2.0)) + torch.special.log_ndtr(t_stats)) / torch.log(torch.tensor(10.0))
     #     all_stats = np.stack([b_np, se_np, neg_log10_pval], axis=2)
     #     all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
-    #     buffer.append(all_stats_2d)
-
-    #     #  Flush every ~1M SNPs
-    #     if rows_in_buffer >= meta["buffer_flush_rows"]:
-    #         stack_buffer = np.vstack(buffer)
-    #         stack_buffer.tofile(out)
+    #     # Convert metadata and stats to DataFrame
+    #     df_meta = pd.DataFrame(meta)
+    #     print("Line number:", inspect.currentframe().f_lineno)
+    #     df_stats = pd.DataFrame(
+    #         all_stats_2d,
+    #         columns=headers
+    #     )
+    #     df = pd.concat([df_meta, df_stats], axis=1)
+    #     print("Line number:", inspect.currentframe().f_lineno)
+    #     buffer.append(df)
+        
+    #     if rows_in_buffer >= buffer_size:
+    #         # Vertically stack all arrays from the buffer
+    #         print("Line number:", inspect.currentframe().f_lineno)
+    #         df = pd.concat(buffer, ignore_index=True)
+    #         print("Line number:", inspect.currentframe().f_lineno)
+    #         table = pa.Table.from_pandas(df, preserve_index=False)
+    #         print("Line number:", inspect.currentframe().f_lineno)
+    #         if writer is None:
+    #             writer = pq.ParquetWriter(
+    #             out_path + ".parquet", table.schema, compression="snappy"
+    #         )
+    #         print("Line number:", inspect.currentframe().f_lineno)
+    #         writer.write_table(table)
+    #         rows_in_buffer = 0
+    #         # Clear buffer after writing
     #         buffer.clear()
-    #         rows_in_buffer = 0 
-    #         out.flush()           
+    #         del b_np, se_np, t_stats_bp, neg_log10_pval, 
+    #         all_stats, all_stats_2d, df_stats, df, table
+    #         gc.collect()     # force Python to reclaim objects
+    #         torch.cuda.empty_cache() 
 
+    # # flush remainder
+    # if buffer:
+    #     df = pd.concat(buffer, ignore_index=True)
+    #     table = pa.Table.from_pandas(df, preserve_index=False)
+    #     if writer is None:
+    #         writer = pq.ParquetWriter(
+    #             out_path + ".parquet", table.schema, compression="snappy"
+    #         )
+    #     writer.write_table(table)
 
-    # if rows_in_buffer > 0:
-    #     stack_buffer = np.vstack(buffer)
-    #     stack_buffer.tofile(out)
-    #     buffer.clear()
-    #     rows_in_buffer = 0  
-    #     print("There are snps less than buffer size, add them to output")
-
-    # out.close()
-
-    # # Write metadata JSON
-    # meta["rows"] = total_rows
-    # with open(out_path + ".meta.json", "w") as f:
-    #     json.dump(meta, f, indent=2)
-
+    # # Close writer
+    # if writer:
+    #     writer.close()
+    
     # end = time.time()
-    # print(f" Done — {total_rows:,} SNPs written in {(end-start):.1f}s")
+    # print(f"time for chunck = {end - start}")
 
-    # # Load metadata
-    # with open(out_path + ".meta.json") as f:
-    #     meta = json.load(f)
+    # #Read the parquet file head
+    # df_check = pd.read_parquet(out_path + ".parquet")
 
-    # rows = meta["rows"]
-    # cols = meta["cols"]
+    # # Show first 5 rows
+    # print(df_check.head())
 
-    # data = np.fromfile(out_path, dtype=np.float32)
-
-    # # Reshape into (rows, cols*2)
-    # data = data.reshape(rows, cols * 2)
-
-    # # Print the first 5 rows
-    # print("First 5 rows (Beta + SE + pvalue):")
-    # print(data[:5, :20])   
-    writer = None 
-    buffer_tables = []
+    # # Show the column names
+    # print(df_check.columns.tolist())
     buffer_size = 100_000
-    rows_in_buffer = 0
-    buffer = []
+
     headers = [
-    # "SNPID",
-    # "RSID",
-    # "CHR",
-    # "POS",
-    # "Non_Effect_Allele",
-    # "Effect_Allele",
-    # "N_Samples",
-    # "AF",
-    # "GV"
+    "SNPID",
+    "RSID",
+    "CHR",
+    "POS",
+    "Non_Effect_Allele",
+    "Effect_Allele",
+    "N_Samples",
+    "AF",
+    "GV"
     ]
 
     for ph in ph_headers:
@@ -257,38 +282,19 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         headers.append(f"{ph}_SE")
         headers.append(f"{ph}_pvalue")
 
+    rows_in_buffer = 0
+    buffer = []
+    writer = None
+    out_path = "TGWAS" + out_file
+    if os.path.exists(out_path + ".feather"):
+        os.remove(out_path + ".feather")
+
     start = time.time()
 
-    # Output and metadata setup
-    out_path = "TGWAS" + out_file
- 
-    if os.path.exists(out_path):
-        os.remove(out_path)
-    # out = open(out_path, "ab")  # append binary
-    # print("Line number:", inspect.currentframe().f_lineno)
     for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
-        
-        # for i, (chunk_data, meta) in enumerate(tqdm(queue, desc="Processing SNPs")):
-        #     if i == 0:
-        #         print("\nMeta structure:")
-        #         for k, v in meta.items():
-        #             # detect type and size
-        #             t = type(v)
-        #             n = len(v) if hasattr(v, "__len__") else "-"
-        #             try:
-        #                 if isinstance(v, np.ndarray):
-        #                     b = v.nbytes
-        #                 elif isinstance(v, (list, tuple)):
-        #                     b = sum(sys.getsizeof(x) for x in v)
-        #                 else:
-        #                     b = sys.getsizeof(v)
-        #             except Exception:
-        #                 b = "?"
-        #             print(f"  {k:<15} | type: {t.__name__:<15} | len: {n:<8} | bytes: {b}")
-        
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
-        # print(f"actual_snps{actual_snps}")
+
         geno = geno_tensor[:actual_snps, :]
         beta = beta_tensor[:actual_snps, :]
         gamma = gamma_tensor[:actual_snps, :]
@@ -300,127 +306,68 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
 
         b_np = beta_coeffs.cpu().numpy().astype(np.float32)
         se_np = se.cpu().numpy().astype(np.float32)
-        t_stats_bp = t_stats.numpy().astype(np.float32)
-        # all_stats = np.stack([b_np, se_np], axis=2)
-        # pvals = 2 * torch.special.ndtr(t_stats)
-        neg_log10_pval = -(torch.log(torch.tensor(2.0)) + torch.special.log_ndtr(t_stats)) / torch.log(torch.tensor(10.0))
+        neg_log10_pval = (
+            -(torch.log(torch.tensor(2.0)) + torch.special.log_ndtr(t_stats))
+            / torch.log(torch.tensor(10.0))
+        ).cpu().numpy().astype(np.float32)
+
+        # keep order: BETA, SE, PVAL repeating per phenotype
         all_stats = np.stack([b_np, se_np, neg_log10_pval], axis=2)
         all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
-        # Convert metadata and stats to DataFrame
-        df_meta = pd.DataFrame(meta)
-        
-        df_stats = pd.DataFrame(
-            all_stats_2d,
-            columns=headers
-        )
-        df = pd.concat([df_meta, df_stats], axis=1)
-      
-        buffer.append(df)
-        # all_stats = np.concatenate([b_np, se_np, neg_log10_pval], axis=1)
-        # meta_arrays = {k: pa.array(v) for k, v in meta.items()}
 
-    # Numeric fields
-        # stat_arrays = {
-        #     **{f"{ph}_BETA": pa.array(all_stats[:, i]) for i, ph in enumerate(ph_headers)},
-        #     **{f"{ph}_SE": pa.array(all_stats[:, i + len(ph_headers)]) for i, ph in enumerate(ph_headers)},
-        #     **{f"{ph}_pvalue": pa.array(all_stats[:, i + 2 * len(ph_headers)]) for i, ph in enumerate(ph_headers)},
-        # }
+        # Convert metadata to Arrow arrays
+        meta_arrays = []
+        for k, v in meta.items():
+            if isinstance(v[0], str):
+                meta_arrays.append(pa.array(v, type=pa.string()))
+            elif isinstance(v[0], (int, np.integer)):
+                meta_arrays.append(pa.array(v, type=pa.int32()))
+            else:
+                meta_arrays.append(pa.array(v, type=pa.float32()))
 
-        # Merge all columns
-        # table = pa.Table.from_pydict({**meta_arrays, **stat_arrays})
-        # buffer_tables.append(table)
+        # Convert numeric results to Arrow arrays
+        # stat_arrays = [pa.array(all_stats_2d[:, i], type=pa.float32())
+        #             for i in range(all_stats_2d.shape[1])]
+        stat_arrays= [pa.array(col, type=pa.float32()) for col in all_stats_2d.T]
+                        
+                    
+        table= pa.table(meta_arrays + stat_arrays, names=headers)
+        buffer.append(table)
+
+        # flush buffer
         if rows_in_buffer >= buffer_size:
-            # print("Line number:", inspect.currentframe().f_lineno)
-            # Vertically stack all arrays from the buffer
-            df = pd.concat(buffer, ignore_index=True)
-            # table = pa.concat_tables(buffer_tables, promote=True)
-            # print("Line number:", inspect.currentframe().f_lineno)
-            # Convert to Arrow Table and write to Parquet
-            table = pa.Table.from_pandas(df, preserve_index=False)
-            # print("Line number:", inspect.currentframe().f_lineno)
+            combined = pa.concat_tables(buffer)
+            # write Feather (Arrow IPC v2)
+            # feather.write_feather(combined, out_path + ".feather", compression="zstd")
             if writer is None:
                 writer = pq.ParquetWriter(
                 out_path + ".parquet", table.schema, compression="snappy"
             )
-            # print("Line number:", inspect.currentframe().f_lineno)
             writer.write_table(table)
             rows_in_buffer = 0
-            # Clear buffer after writing
             buffer.clear()
-            # buffer_tables.clear()
-    # flush remainder
+            del combined, b_np, se_np, neg_log10_pval,
+            all_stats, all_stats_2d, table, stat_arrays, meta_arrays
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    # --- Flush remaining ---
     if buffer:
-        df = pd.concat(buffer, ignore_index=True)
-        # table = pa.concat_tables(buffer_tables, promote=True)
-        # Create a DataFrame (column names already known)
-        # df = pd.DataFrame(stacked, columns=headers)
-        # Convert all numeric columns explicitly to float32 (for safety)
-        # df = df.astype(np.float32, copy=False)
-        table = pa.Table.from_pandas(df, preserve_index=False)
+        combined = pa.concat_tables(buffer)
+        # feather.write_feather(combined, out_path + ".feather", compression="zstd")
         if writer is None:
-            writer = pq.ParquetWriter(
+                writer = pq.ParquetWriter(
                 out_path + ".parquet", table.schema, compression="snappy"
             )
         writer.write_table(table)
-        buffer_tables.clear()
+        buffer.clear()
+        del combined
+        gc.collect()
+        torch.cuda.empty_cache()
 
-    # if rows_in_buffer >= buffer_size:
-    #     # Merge buffered chunks into one big NumPy array
-    #         stacked = np.concatenate(buffer, axis=0)  # slightly faster than vstack for 2D
-
-    #         # Convert to Arrow Table (zero-copy when possible)
-    #         # arrays = [pa.array(stacked[:, i]) for i in range(stacked.shape[1])]
-    #         # table = pa.Table.from_arrays(arrays, names=beta_se_headers)
-    #         table = pa.Table.from_arrays(
-    #             [pa.array(col) for col in stacked.T],
-    #             names=beta_se_headers
-    #         )            # Initialize writer only once
-    #         if writer is None:
-    #             writer = pq.ParquetWriter(
-    #                 out_path + ".parquet", 
-    #                 table.schema, 
-    #                 compression="snappy",  # snappy = best balance (fast write, decent size)
-    #                 use_dictionary=False   # slightly faster for numeric-heavy data
-    #             )
-
-    #         # Write and clean
-    #         writer.write_table(table)
-    #         del stacked, table
-    #         buffer.clear()
-    #         rows_in_buffer = 0
-    # if buffer:
-    #     # Merge buffered chunks into one big NumPy array
-    #     stacked = np.concatenate(buffer, axis=0)  # slightly faster than vstack for 2D
-
-    #     # Convert to Arrow Table (zero-copy when possible)
-    #     # arrays = [pa.array(stacked[:, i]) for i in range(stacked.shape[1])]
-    #     # table = pa.Table.from_arrays(arrays, names=beta_se_headers)
-    #     table = pa.Table.from_arrays(
-    #         [pa.array(col) for col in stacked.T],
-    #         names=beta_se_headers
-    #     )
-    #     if writer is None:
-    #         writer = pq.ParquetWriter(
-    #             out_path + ".parquet", 
-    #             table.schema, compression="snappy",
-    #             use_dictionary=False
-    #         )
-    #     writer.write_table(table)
-    #     del stacked, table
-
-
-    # Close writer
-    if writer:
-        writer.close()
-    
     end = time.time()
-    print(f"time for chunck = {end - start}")
+    print(f"time for chunk = {end - start:.2f}s")
 
-    #Read the parquet file head
-    df_check = pd.read_parquet(out_path + ".parquet")
-
-    # Show first 5 rows
-    print(df_check.head())
-
-    # Show the column names
-    print(df_check.columns.tolist())
+    # --- Read Feather file back ---
+    table_check = feather.read_table(out_path + ".feather")
+    print(table_check.slice(0, 5).to_pandas())  # show first 5 rows
