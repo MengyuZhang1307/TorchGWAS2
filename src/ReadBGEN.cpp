@@ -8,6 +8,12 @@
 #include <condition_variable>
 
 /**************************************
+Helper function to remove extra bytes
+*************************************/
+auto trim_null = [](const char* s, size_t maxlen) -> std::string {
+    return std::string(s, strnlen(s, maxlen));
+};
+/**************************************
 This function is revised based on the Parse function in BOLT-LMM v2.3 source code
 *************************************/
 
@@ -432,13 +438,23 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 // Pad remaining columns with NaN to fixed width
                 for (std::size_t c = out_cols; c < static_cast<std::size_t>(samSize); ++c) row_ptr[c] = nanv;
                 row_in_chunk++;
-
-                current_chunk.snpid.push_back(LS > 0 ? std::string(snpID.data(), snpID.size()) : "NA");
-                current_chunk.rsid.push_back(LR > 0 ? std::string(rsID.data(), rsID.size()) : "NA");
-                current_chunk.chr.push_back(LC > 0 ? std::string(chrStr.data(), chrStr.size()) : "-1");
+                
+                current_chunk.snpid.push_back(
+                    LS > 0 ? trim_null(snpID.data(), 65536) : "NA"
+                );
+                current_chunk.rsid.push_back(
+                    LR > 0 ? trim_null(rsID.data(), 65536) : "NA"
+                );
+                current_chunk.chr.push_back(
+                    LC > 0 ? trim_null(chrStr.data(), 65536) : "-1"
+                );
                 current_chunk.pos.push_back(physpos_tmp);
-                current_chunk.allele1.push_back(std::string(allele1.data(), allele1.size()));
-                current_chunk.allele0.push_back(std::string(allele0.data(), allele0.size()));
+                current_chunk.allele1.push_back(
+                    trim_null(allele1.data(), 65536)
+                );
+                current_chunk.allele0.push_back(
+                    trim_null(allele0.data(), 65536)
+                );
                 current_chunk.n_samples.push_back(std::to_string(samSize - nmiss));
                 current_chunk.af.push_back(cur_AF);
                 current_chunk.gv.push_back(gvar);

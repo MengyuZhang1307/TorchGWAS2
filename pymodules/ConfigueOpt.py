@@ -1,4 +1,4 @@
-from Mygen import GEMOptions
+from .Mygen import GEMOptions
 
 class ConfOpt:
     def __init__(self, **kwargs):

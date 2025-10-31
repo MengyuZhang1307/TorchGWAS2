@@ -1,12 +1,12 @@
 #to run on server $HOME/local/python3.11/bin/python3 Bgen.py or python3 Bgen.py 
 
-import sys
 import pandas as pd
-sys.path.append("build-add-metadata-stream")  
-sys.path.append("pymodules")  
+import os, sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "pymodules"))
 from pymodules import ConfOpt
-from TorchGWAS import run_gwas
-from Mygen import GEMRunner
+# import Mygen
+from pymodules import GEMRunner
+from pymodules import run_gwas
 import numpy as np
 import time
 import argparse

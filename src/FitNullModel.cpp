@@ -143,16 +143,7 @@ void NullModel::filter_pheno_by_cov(Cov const& cov)
     for (int i = 0; i < pheno_raw.size(); ++i)
         ph_id_map[pheno_raw[i][hdr_id_indx]] = i;
     
-    // Prepare output files for streaming
-    // std::ofstream data_out("pheno_valid_indices.bin", std::ios::binary);
-    // std::ofstream meta_out("pheno_valid_indices.meta");
-    uint64_t offset = 0;
-    
-    if (!data_out || !meta_out)
-    {
-        throw std::runtime_error("Cannot open valid-index files");
-    }
-
+  
     phenotype_data.assign(num_traits, {});
     pheno_valid_indices.assign(num_traits, {});
 

@@ -186,14 +186,14 @@ set(SUITESPARSE_LIBRARIES
     ${suitesparse_BINARY_DIR}/AMD/libamd.a
     ${suitesparse_BINARY_DIR}/SuiteSparse_config/libsuitesparseconfig.a
 )
-#nlohmann/json=================================================================
-FetchContent_Declare(
-  json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.11.3   # or latest stable release
-)
+# #nlohmann/json=================================================================
+# FetchContent_Declare(
+#   json
+#   GIT_REPOSITORY https://github.com/nlohmann/json.git
+#   GIT_TAG v3.11.3   # or latest stable release
+# )
 
-FetchContent_MakeAvailable(json)
+# FetchContent_MakeAvailable(json)
 # Set executable for Python module ============================================
 add_library(Mygen MODULE ${SOURCES})
 
@@ -218,10 +218,14 @@ target_link_libraries(Mygen PRIVATE pybind11::module
                   Boost::system
                   Boost::filesystem
                   Boost::program_options
-                  nlohmann_json::nlohmann_json
+                  # nlohmann_json::nlohmann_json
                   ${SUITESPARSE_LIBRARIES}
                   ${MKL_LIBRARIES})
-set_target_properties(Mygen PROPERTIES PREFIX "")
+
+set_target_properties(Mygen PROPERTIES
+                      PREFIX ""  # remove the default 'lib' prefix
+                      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/pymodules"
+                     )
 
 # Set compiler optimization flags 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -funroll-loops -ffast-math  -fno-math-errno -DNDEBUG")
