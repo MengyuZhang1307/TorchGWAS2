@@ -58,7 +58,9 @@ pkg-config
 RUN git clone https://github.com/DrTimothyAldenDavis/SuiteSparse.git
 # Create build directory
 WORKDIR /SuiteSparse/build
-# Configure SuiteSparse with static linking and no demo/test builds
+# Configure SuiteSparse with static linking - build only essential libraries for GWAS
+# Excluded: LAGraph (graph algorithms), SPEX (exact arithmetic - needs GMP), ParU (parallel LU)
+# -fPIC is required for linking static libs into shared libraries (Python module)
 RUN cmake .. \
     -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -68,9 +70,12 @@ RUN cmake .. \
     -DCUDA=OFF \
     -DINSTALL_LAGRAPH_DEMOS=OFF \
     -DINSTALL_GRAPHBLAS_DEMOS=OFF \
-    -DOPENMP=OFF\
-    -DCMAKE_C_FLAGS="-fno-openmp" \
-    -DCMAKE_CXX_FLAGS="-fno-openmp"
+    -DGRAPHBLAS_BUILD_TESTS=OFF \
+    -DOPENMP=OFF \
+    -DCMAKE_C_FLAGS="-fno-openmp -fPIC" \
+    -DCMAKE_CXX_FLAGS="-fno-openmp -fPIC" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DSUITESPARSE_ENABLE_PROJECTS="suitesparse_config;mongoose;amd;btf;camd;ccolamd;colamd;cholmod;cxsparse;ldl;klu;umfpack;rbio;spqr;graphblas"
 
 # Build everything
 RUN make -j$(nproc)

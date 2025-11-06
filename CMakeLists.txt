@@ -10,7 +10,8 @@ project(GEM)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include(FetchContent)
 
-set(FETCHCONTENT_BASE_DIR /data/ssalehinasab/cmake_deps)
+# Use default FetchContent cache directory (build/_deps)
+# set(FETCHCONTENT_BASE_DIR /data/ssalehinasab/cmake_deps)
 
 file(GLOB SRC "src/*.cpp")
 file(GLOB CC_SOURCES "thirdparty/plink-2.0/*.cc")
@@ -34,7 +35,7 @@ FetchContent_Declare(fmt
 FetchContent_MakeAvailable(fmt)
 #PYBIND11=================================================================
 set(PYBIND11_PYTHON_VERSION 3.11)
-set(ENV{LD_LIBRARY_PATH} "$ENV{HOME}/local/Python-3.11.6/")
+# set(ENV{LD_LIBRARY_PATH} "$ENV{HOME}/local/Python-3.11.6/")
 FetchContent_Declare(
   pybind11
   GIT_REPOSITORY https://github.com/pybind/pybind11.git
@@ -91,7 +92,8 @@ endif()
 # )
 # FetchContent_MakeAvailable(Boost)
 
-set(BOOST_ROOT /data/ssalehinasab/boost_1_74_0_install)
+# Use system Boost installed in Docker
+# set(BOOST_ROOT /data/ssalehinasab/boost_1_74_0_install)
 set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost 1.74.0 REQUIRED COMPONENTS program_options thread system filesystem)
 
@@ -102,8 +104,13 @@ include_directories(${Boost_INCLUDE_DIRS})
 # find_package(BLAS REQUIRED)
 # find_package(LAPACK REQUIRED)
 #Set MKL=================================================================
-#set(MKLROOT "data/ssalehinasab/l_onemklbench_p_2025.2.0_532/mkl")
-set(MKLROOT "/data/ssalehinasab/intel/mkl/latest")
+# Use MKL from Docker environment (set by Dockerfile)
+if(NOT DEFINED MKLROOT)
+  set(MKLROOT $ENV{MKLROOT})
+endif()
+if(NOT MKLROOT)
+  set(MKLROOT "/opt/intel/oneapi/mkl/latest")
+endif()
 message("MKLROOT: ${MKLROOT}")
 
 # Specify include directories for MKL
@@ -139,21 +146,30 @@ message(STATUS "Using MKL for BLAS/LAPACK: ${MKL_LIBRARIES}")
 
 
 #GMP=================================================================
-# GMP and MPFR (installed locally under /data/ssalehinasab/local)
+# GMP and MPFR - use system-installed libraries in Docker
 # GMP
-set(GMP_INCLUDE_DIR /data/ssalehinasab/local/include CACHE PATH "Path to GMP headers")
-set(GMP_LIBRARY /data/ssalehinasab/local/lib/libgmp.so CACHE FILEPATH "Path to GMP shared library")
-set(GMP_LIBRARIES ${GMP_LIBRARY} CACHE FILEPATH "For compatibility")
-set(GMP_STATIC /data/ssalehinasab/local/lib/libgmp.a CACHE FILEPATH "Path to GMP static library")
+find_path(GMP_INCLUDE_DIR gmp.h)
+find_library(GMP_LIBRARY NAMES gmp libgmp)
+if(GMP_INCLUDE_DIR AND GMP_LIBRARY)
+  set(GMP_LIBRARIES ${GMP_LIBRARY})
+  message(STATUS "Found GMP: ${GMP_LIBRARY}")
+else()
+  message(WARNING "GMP not found")
+endif()
 
 # MPFR
-set(MPFR_INCLUDE_DIR /data/ssalehinasab/local/include CACHE PATH "Path to MPFR headers")
-set(MPFR_LIBRARY /data/ssalehinasab/local/lib/libmpfr.so CACHE FILEPATH "Path to MPFR shared library")
-set(MPFR_LIBRARIES ${MPFR_LIBRARY} CACHE FILEPATH "For compatibility")
-set(MPFR_STATIC /data/ssalehinasab/local/lib/libmpfr.a CACHE FILEPATH "Path to MPFR static library")
+find_path(MPFR_INCLUDE_DIR mpfr.h)
+find_library(MPFR_LIBRARY NAMES mpfr libmpfr)
+if(MPFR_INCLUDE_DIR AND MPFR_LIBRARY)
+  set(MPFR_LIBRARIES ${MPFR_LIBRARY})
+  message(STATUS "Found MPFR: ${MPFR_LIBRARY}")
+else()
+  message(WARNING "MPFR not found")
+endif()
 
-include_directories(${GMP_INCLUDE_DIR} ${MPFR_INCLUDE_DIR})
-
+if(GMP_INCLUDE_DIR AND MPFR_INCLUDE_DIR)
+  include_directories(${GMP_INCLUDE_DIR} ${MPFR_INCLUDE_DIR})
+endif()
 
 message(STATUS "Using GMP include dir: ${GMP_INCLUDE_DIR}")
 message(STATUS "Using GMP library: ${GMP_LIBRARIES}")
@@ -161,31 +177,33 @@ message(STATUS "Using MPFR include dir: ${MPFR_INCLUDE_DIR}")
 message(STATUS "Using MPFR library: ${MPFR_LIBRARIES}")
 
 #SuiteSparse=================================================================
-# --- SuiteSparse (link exported targets; no install needed) -------------------
+# --- SuiteSparse (use system-installed libraries) -------------------
 
-FetchContent_Declare(
-  suitesparse
-  GIT_REPOSITORY https://github.com/DrTimothyAldenDavis/SuiteSparse.git
-  GIT_TAG v7.8.2
-)
-set(OPENMP OFF CACHE BOOL "Disable OpenMP in SuiteSparse")
-# Try extra toggles (harmless if they don't exist)
-set(SUITESPARSE_USE_OPENMP OFF CACHE BOOL "")
-set(CHOLMOD_USE_OPENMP OFF CACHE BOOL "")
-set(ENABLE_OPENMP OFF CACHE BOOL "")
-FetchContent_MakeAvailable(suitesparse)
+# Try to find system-installed SuiteSparse
+find_library(CHOLMOD_LIB cholmod PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_library(CXSPARSE_LIB cxsparse PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_library(SPQR_LIB spqr PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_library(UMFPACK_LIB umfpack PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_library(CAMD_LIB camd PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_library(CCOLAMD_LIB ccolamd PATHS /usr/local/lib NO_DEFAULT_PATH)
 
-set(SUITESPARSE_LIBRARIES
-    ${suitesparse_BINARY_DIR}/CHOLMOD/libcholmod.a
-    ${suitesparse_BINARY_DIR}/CXSparse/libcxsparse.a
-    ${suitesparse_BINARY_DIR}/SPQR/libspqr.a
-    ${suitesparse_BINARY_DIR}/UMFPACK/libumfpack.a
-    ${suitesparse_BINARY_DIR}/CAMD/libcamd.a
-    ${suitesparse_BINARY_DIR}/CCOLAMD/libccolamd.a
-    ${suitesparse_BINARY_DIR}/COLAMD/libcolamd.a
-    ${suitesparse_BINARY_DIR}/AMD/libamd.a
-    ${suitesparse_BINARY_DIR}/SuiteSparse_config/libsuitesparseconfig.a
-)
+if(CHOLMOD_LIB AND CXSPARSE_LIB AND SPQR_LIB AND UMFPACK_LIB AND CAMD_LIB AND CCOLAMD_LIB)
+    message(STATUS "Using system-installed SuiteSparse libraries")
+    set(SUITESPARSE_LIBRARIES
+        ${CHOLMOD_LIB}
+        ${CXSPARSE_LIB}
+        ${SPQR_LIB}
+        ${UMFPACK_LIB}
+        ${CAMD_LIB}
+        ${CCOLAMD_LIB}
+        /usr/local/lib/libcolamd.a
+        /usr/local/lib/libamd.a
+        /usr/local/lib/libsuitesparseconfig.a
+    )
+    set(SUITESPARSE_INCLUDE_DIR /usr/local/include/suitesparse)
+else()
+    message(FATAL_ERROR "System-installed SuiteSparse libraries not found")
+endif()
 # #nlohmann/json=================================================================
 # FetchContent_Declare(
 #   json
@@ -198,15 +216,7 @@ set(SUITESPARSE_LIBRARIES
 add_library(Mygen MODULE ${SOURCES})
 
 target_include_directories(Mygen PRIVATE
-    ${suitesparse_SOURCE_DIR}/CHOLMOD/Include
-    ${suitesparse_SOURCE_DIR}/CXSparse/Include
-    ${suitesparse_SOURCE_DIR}/SPQR/Include
-    ${suitesparse_SOURCE_DIR}/UMFPACK/Include
-    ${suitesparse_SOURCE_DIR}/CAMD/Include
-    ${suitesparse_SOURCE_DIR}/CCOLAMD/Include
-    ${suitesparse_SOURCE_DIR}/COLAMD/Include
-    ${suitesparse_SOURCE_DIR}/AMD/Include
-    ${suitesparse_SOURCE_DIR}/SuiteSparse_config
+    ${SUITESPARSE_INCLUDE_DIR}
 )
 target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")
@@ -220,7 +230,10 @@ target_link_libraries(Mygen PRIVATE pybind11::module
                   Boost::program_options
                   # nlohmann_json::nlohmann_json
                   ${SUITESPARSE_LIBRARIES}
-                  ${MKL_LIBRARIES})
+                  ${MKL_LIBRARIES}
+                  m
+                  dl)
+                  
 
 set_target_properties(Mygen PROPERTIES
                       PREFIX ""  # remove the default 'lib' prefix
