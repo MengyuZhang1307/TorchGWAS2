@@ -12,7 +12,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
                     int robust, std::ext::V_string covSelHeadersName, std::ext::V_double phenodata, 
                     std::ext::V_double covdata, std::ext::V_double* XinvXTX_ret, std::ext::V_double* miu_ret, 
                     std::ext::V_double* resid_ret, double* sigma2_ret, std::ext::V_double& beta_ret,
-                    std::ext::V_double& Xbeta_ret);
+                    std::ext::V_double& Xbeta_ret, bool verbose);
 
 void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat, double* beta, int phenoType, int samSize);
 
@@ -30,8 +30,7 @@ class NullModel
         explicit NullModel(GEMOptions const& user_opt);
         void fit_nullmodel(bool kin_flag,
             std::ext::V_string& bgen_sample_id,
-            bool is_dup_id,
-            std::ext::V_double& c2_out);
+            bool is_dup_id);
         Cov setup_cov_pheno(std::string const& cov_add,
                   char const cov_delim,
                   std::string const& sampleid_header_name,
@@ -49,8 +48,7 @@ class NullModel
                             std::ext::FitNull_f const& fitNullModel2,
                             std::ext::V_string const& covariates,
                             std::string const& random_slope_header_name,
-                            std::string const& output,
-                            std::ext::V_double& c2_out);
+                            std::string const& output);
         void print_res(std::string output, std::ext::V_string const& column_names,
                         std::ext::V_double const& c2, 
                         std::ext::V_string const&bgen_sample_id,

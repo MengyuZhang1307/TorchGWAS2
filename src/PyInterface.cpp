@@ -52,8 +52,8 @@ PYBIND11_MODULE(Mygen, m)
         .def_readwrite("kin_delim", &GEMOptions::kin_delim)
         .def_readwrite("kin_diag", &GEMOptions::kin_diag)
         .def_readwrite("threads", &GEMOptions::threads)
-        // .def_readwrite("num_chunks", &GEMOptions::num_chunks)
-        .def_readwrite("outfile", &GEMOptions::outfile);
+        .def_readwrite("outfile", &GEMOptions::outfile)
+        .def_readwrite("verbose", &GEMOptions::verbose);
         
         // Bind GEMRunner
         py::class_<GEMRunner>(m, "GEMRunner")

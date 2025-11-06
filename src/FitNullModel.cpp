@@ -75,7 +75,8 @@ void NullModel::process_phenotype_file(Cov& cov)
     }
     
     int num_columns = pheno_column_names.size();
-    std::cout << "Total columns: " << num_columns << "\n"; 
+    std::cout << "****************************************************************************\n";
+    std::cout << "Total columns in phenotype file: " << num_columns << "\n"; 
     std::cout << "****************************************************************************\n";
     
     // The first two cols are FID and IID
@@ -135,7 +136,10 @@ void NullModel::process_phenotype_file(Cov& cov)
 void NullModel::filter_pheno_by_cov(Cov const& cov)
 {
     
-    fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
+    if (opt.verbose)
+    {
+        fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
+    }
     const auto& kept_idx = cov.m_data_frame.m_data.at(cov.m_sam_id_hdr);
     const int num_traits = pheno_column_names.size() - 2;
     std::unordered_map<std::string, int> ph_id_map;
@@ -180,8 +184,11 @@ void NullModel::filter_pheno_by_cov(Cov const& cov)
     }
     
     const size_t pheno_rows_after = phenotype_data.empty() ? 0 : phenotype_data[0].size();
-    fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
-    std::cout << "****************************************************************************\n";
+    if (opt.verbose)
+    {
+        fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
+        std::cout << "****************************************************************************\n";
+    }
     pheno_raw.clear();
     pheno_raw.shrink_to_fit();//free the unused memory
 }
@@ -206,12 +213,18 @@ Cov NullModel::setup_cov_pheno(std::string const& cov_add,
     cov.read_file(path, cov_delim, cov.m_v_hdrs);
     process_phenotype_file(cov);
     //Match genofile sample IDs
-    fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
+    if (opt.verbose)
+    {
+        fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
+    }
     //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
     cov.m_data_frame.match_genoids(cov.m_sam_id_hdr, cov.m_v_hdrs);
-    fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
-    fmt::println("****************************************************************************");
-    filter_pheno_by_cov(cov); //Remove missing cov data from pheno file
+    if (opt.verbose)
+    {   
+        fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
+        fmt::println("****************************************************************************");
+    }
+        filter_pheno_by_cov(cov); //Remove missing cov data from pheno file
     return cov;
 }
 
@@ -225,8 +238,7 @@ void NullModel::process_gmmat(const std::string kin_add,
                             const std::ext::FitNull_f& fitNullModel2,
                             const std::ext::V_string& covariates,
                             const std::string& random_slope_header_name,
-                            const std::string& output,
-                            std::ext::V_double& c2_out)
+                            const std::string& output)
 {
     Cov cov = setup_cov_pheno(cov_add, cov_delim, sampleid_header_name, cov_headers,
                         bgen_sample_id, missing_key);
@@ -259,7 +271,7 @@ void NullModel::process_gmmat(const std::string kin_add,
             [this, cov_copy = cov, &kin_add, &kin_delim, &kin_diag,
             &cov_delim, &bgen_sample_id, 
             &missing_key, start_col, t, end_col, &fitNullModel2, 
-            &covariates, &random_slope_header_name, 
+            &covariates, &random_slope_header_name,
             &thread_local_maps] () mutable
             {
                 auto& local_map = thread_local_maps[t];
@@ -273,8 +285,7 @@ void NullModel::process_gmmat(const std::string kin_add,
                         cov_delim, bgen_sample_id, 
                         missing_key, fitNullModel2, this->phenotype_data[this_col], 
                         this->pheno_valid_indices[this_col], 
-                        covariates, random_slope_header_name, "", "REML", "AI",
-                        500, 1e-5, 1e-5, 1e+5, 10
+                        covariates, random_slope_header_name, this->opt.verbose
                     );
 
                     local_map[this->pheno_column_names[this_col + 2]] = std::move(residuals);
@@ -305,9 +316,6 @@ void NullModel::process_gmmat(const std::string kin_add,
         c2.push_back(residual_map[pheno_column_names[col + 2]].c2);
     }
 
-    // Return C2 values
-    c2_out = c2;
-
     print_res(output, pheno_column_names, c2,
                 bgen_sample_id, id_include_vec, output_matrix);
 }
@@ -315,8 +323,7 @@ void NullModel::process_gmmat(const std::string kin_add,
  
 void NullModel::fit_nullmodel(bool kin_flag,
         std::ext::V_string& bgen_sample_id,
-        bool is_dup_id,
-        std::ext::V_double& c2_out)
+        bool is_dup_id)
 {
     if (kin_flag || is_dup_id)
     {
@@ -333,10 +340,10 @@ void NullModel::fit_nullmodel(bool kin_flag,
                         cov_headers, bgen_sample_id, opt.missing_key,
                         opt.threads, fitNullModel2, 
                         opt.covariates, opt.random_slope_header_name, 
-                        opt.outfile, c2_out);
-        cout << "\nEnd of association test\n";
+                        opt.outfile);
+        cout << "\nEnd of fitting null model\n";
         cout << "****************************************************************************\n";
-        cout << "calculating the duration of association test...\n";
+        cout << "calculating the duration of fitting null model...\n";
         auto end_time_gmmat = std::chrono::high_resolution_clock::now();
         printExecutionTime(start_time_gmmat, end_time_gmmat);
         cout << std::flush;
@@ -461,7 +468,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
                 int robust, std::ext::V_string covariates, std::ext::V_double phenodata, 
                 std::ext::V_double covdata, std::ext::V_double* XinvXTX_ret, std::ext::V_double* miu_ret, 
                 std::ext::V_double* resid_ret, double* sigma2_ret, std::ext::V_double& beta_ret,
-                std::ext::V_double& Xbeta_ret)
+                std::ext::V_double& Xbeta_ret, bool verbose)
 {
     double* phenoY = &phenodata[0];
     double* covX = &covdata[0];
@@ -471,8 +478,10 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
     int Check = 1; // convergence condition of beta^(i+1) - beta^(i)
     int iter = 1;
 
-
-    cout << "Precalculations and fitting null model..." << endl;
+    if (verbose)
+    {
+        cout << "Precalculations and fitting null model..." << endl;
+    }
     //auto start_time = std::chrono::high_resolution_clock::now();
     // transpose(X) * X
     double* XTransX = new double[(numSelCol + 1) * (numSelCol + 1)];
@@ -583,7 +592,10 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         for (int i = 0; i < (numSelCol + 1) * (numSelCol + 1); i++) {
             XTransX[i] = XTransX[i] * sigma2;
         }
-        printCovVarMat(numSelCol + 1, covariates, XTransX, beta, phenoType, samSize);
+        if (verbose)
+        {
+            printCovVarMat(numSelCol + 1, covariates, XTransX, beta, phenoType, samSize);
+        }
     }
     else {
         std::ext::V_double XR2vec = covdata;
@@ -600,7 +612,10 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         matmatTprod(XR2tX, XTransX, XTransXtXR2tX, numSelCol + 1, numSelCol + 1, numSelCol + 1);
         double* XTransXR2 = new double[(numSelCol + 1) * (numSelCol + 1)];
         matmatTprod(XTransX, XTransXtXR2tX, XTransXR2, numSelCol + 1, numSelCol + 1, numSelCol + 1);
-        printCovVarMat(numSelCol + 1, covariates, XTransXR2, beta, phenoType, samSize);
+        if (verbose)
+        {
+            printCovVarMat(numSelCol + 1, covariates, XTransXR2, beta, phenoType, samSize);
+        }
         delete[] XR2tX;
         delete[] XTransXtXR2tX;
         delete[] XTransXR2;
