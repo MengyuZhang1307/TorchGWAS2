@@ -122,8 +122,8 @@ PYBIND11_MODULE(Mygen, m)
         meta["RSID"]           = c.rsid;
         meta["CHR"]            = c.chr;
         meta["POS"]            = c.pos;
-        meta["Non_Effect_Allele"] = c.allele0;
-        meta["Effect_Allele"]  = c.allele1;
+        meta["Non_Effect_Allele"] = c.allele1;
+        meta["Effect_Allele"]  = c.allele0;
         meta["N_Samples"]      = c.n_samples;
         meta["AF"]             = c.af;
         meta["GV"]             = c.gv;

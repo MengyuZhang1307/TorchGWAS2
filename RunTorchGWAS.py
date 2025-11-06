@@ -7,6 +7,7 @@ from pymodules import ConfOpt
 # import Mygen
 from pymodules import GEMRunner
 from pymodules import run_gwas
+from pymodules import parquet_to_text_duckdb
 import numpy as np
 import time
 import argparse
@@ -46,16 +47,13 @@ def parse_args():
     parser.add_argument("--stream-snps", type=int, default=1000, help="Number of SNPs per chunk")
     parser.add_argument("--out", type=str, default="out.txt", help="Output file name")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Computation device (default: cuda)")
+    parser.add_argument("--verbose", action="store_true", help="Print null model(default: False)")
+    parser.add_argument("--convert", action="store_false", help="Convert binary to text file (default: True)")
     return parser.parse_args()
 
 def main():
     args = parse_args()
     start_time = time.time()
-    # if the user provides --threads but does not provide --num-chunks, or vice versa 
-    # if args.threads is None and args.num_chunks is not None:
-    #     args.threads = args.num_chunks
-    # elif args.threads is not None and args.num_chunks is None:
-    #     args.num_chunks = args.threads
 
     confopt = ConfOpt(
         pheno_add=args.pheno_file,
@@ -91,7 +89,8 @@ def main():
     end_time = time.time()
     print("\n TorchGWAS completed successfully.")
     print(f"Wall time: {(end_time - start_time):.2f} seconds")
-
+    if args.convert:
+        parquet_to_text_duckdb(input_file="TGWAS_" + args.out + ".parquet", output_file=args.out + "txt")
 
 if __name__ == "__main__":
     main()

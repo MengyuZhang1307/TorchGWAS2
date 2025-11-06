@@ -9,8 +9,6 @@ import math
 import time
 import pandas as pd
 import pyarrow as pa, pyarrow.parquet as pq
-import json
-import inspect
 import gc
 
 ## function to read corrected residuals and C2
