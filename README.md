@@ -116,6 +116,10 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 #### Output Settings
 - `--out`: Output file path and name (default: `out.txt`)
 - `--device`: Computation device for GWAS testing (choices: `cpu` or `cuda`; default: `cuda`)
+- `--verbose`: Print null model information to console (default: `False`)
+- `--convert`: Convert parquet output to text file (default: `True`)
+  - When `True`: Creates both `.parquet` and `.txt` output files
+  - When `False`: Only creates `.parquet` output file
 
 ## Input File Formats
 
@@ -227,7 +231,19 @@ The analysis automatically runs two sequential stages:
 
 ## Output
 
-The analysis produces a tab-separated results file with GWAS results including:
+The analysis produces GWAS results in two formats:
+
+### Parquet Output (Primary)
+- **File**: `TGWAS_<outfile>.parquet`
+- Binary columnar format for efficient storage and processing
+- Created automatically during analysis
+
+### Text Output (Optional)
+- **File**: `<outfile>.txt` (tab-separated)
+- Human-readable format
+- Created by default (controlled by `--convert` flag)
+
+### Result Columns:
 - **SNP information**: 
   - rsid (variant identifier)
   - chromosome
