@@ -293,7 +293,6 @@ void GEMRunner::run_fit_nullmodel()
     NullModel model(opt);
     model.fit_nullmodel(kin_flag,
                         bgen_sample_id,
-                        is_dup_id,                       
-                        c2_values // Pass C2 values by reference
+                        is_dup_id                     
     );
 }

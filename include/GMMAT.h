@@ -23,7 +23,7 @@ namespace std
                     int robust, std::vector<string> covSelHeadersName, std::vector<double> phenodata, 
                     std::vector<double> covdata, std::vector<double>* XinvXTX_ret, vector<double>* miu_ret, 
                     vector<double>* resid_ret, double* sigma2_ret, std::vector<double>& beta_ret,
-                    std::vector<double>& Xbeta_ret)>;
+                    std::vector<double>& Xbeta_ret, bool verbose)>;
         using Matrix_variant = std::variant<Mat, SpaMat>;
     }
 }
@@ -191,12 +191,13 @@ class GMMAT
          * @param tol 
          * @return Glmmkin 
          */
-        Glmmkin glmmkin_ai(Fit fit_null, int maxiter = 500, double tol = 1e-5);
+        Glmmkin glmmkin_ai(Fit fit_null, bool verbose, int maxiter = 500, double tol = 1e-5);
          /**
           * @brief 
           * 
           * @param fit_null 
           * @param group_id 
+          * @param verbose
           * @param method 
           * @param method_optim 
           * @param maxiter 
@@ -206,7 +207,7 @@ class GMMAT
           * @param tau_region 
           * @return Glmmkin 
           */
-        Glmmkin glmmkin_fit(Fit fit_null, std::ext::V_int group_id, 
+        Glmmkin glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
                             std::string const method = "REML", 
                             std::string method_optim = "AI", 
                             int maxiter = 500,
@@ -220,6 +221,7 @@ class GMMAT
          * @param groups 
          * @param method 
          * @param method_optim 
+         * @param verbose
          * @param maxiter 
          * @param tol 
          * @param tau_min 
@@ -236,7 +238,8 @@ class GMMAT
                 std::ext::V_int pheno_valid_indices,
                 std::ext::V_string covSelectedHeader, 
                 std::string randomSlopeName,
-                std::string const groups,
+                bool verbose,
+                std::string const groups = "",
                 std::string const method = "REML", 
                 std::string method_optim = "AI", 
                 int maxiter = 500,

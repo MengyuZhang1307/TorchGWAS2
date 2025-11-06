@@ -14,16 +14,6 @@ class ConfOpt:
             else:
                 raise ValueError(f"Invalid GEMOptions field: '{k}'")
 
-        # if self._opt.threads > 0 and self._opt.num_chunks > 0:
-        #     if self._opt.threads > self._opt.num_chunks:
-        #         raise ValueError(
-        #             f"Threads {self._opt.threads} cannot be greater than num_chunks {self._opt.num_chunks}"
-        #         )
-    # def __getattr__(self, name):
-    #     # only called if attribute not found in ConfOpt
-    #     return getattr(self._opt, name)
-
-
     def get(self):
         return self._opt
     

@@ -950,7 +950,8 @@ Fit GMMAT::fitglmm_ai(DensVec const& W)
     return fit_to_return;
 }
 
-Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
+Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
+                            int maxiter, double tol)
 {
     Glmmkin glmmkin;
     DensVec py;
@@ -1091,7 +1092,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
     
     for(i = 1; i < maxiter; ++i)
     {
-        std::cout << "iteration: " << i << '\n';
+
         alpha0 = glmmkin.fit.alpha;
         tau0 = m_tau;
         fit_glmm_ai = fitglmm_ai(glmmkin.fit.W); 
@@ -1169,8 +1170,12 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
         glmmkin.fit.W = glmmkin.fit.dmu_deta;
 		glmmkin.fit.sigma_ix = fit_glmm_ai.sigma_ix;
 		glmmkin.fit.sigma_i = fit_glmm_ai.sigma_i;
-        std::cout << "Variance component estimates (m_tau):\n" << m_tau << '\n';
-        std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+        if(verbose)
+        {
+            std::cout << "iteration: " << i << '\n';
+            std::cout << "Variance component estimates (m_tau):\n" << m_tau << '\n';
+            std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+        }
         if(check_convergence(glmmkin.fit.alpha, alpha0, m_tau, tau0, tol, i, maxiter)) break;
     } 
     
@@ -1252,7 +1257,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, int maxiter, double tol)
     return glmmkin;
 }  
 
-Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, 
+Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
                         std::string const method, 
                         std::string method_optim, 
                         int maxiter,
@@ -1286,7 +1291,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id,
         }
 
         std::ext::V_int fixtau_old(kins_size + ng, 0);
-        glmmkin = glmmkin_ai(fit_null, maxiter, tol);
+        glmmkin = glmmkin_ai(fit_null, verbose, maxiter, tol);
         auto fixtau_new = logic_update_fixed_condtion(m_tau, tol);
         //Update fixtau and fixrho
         update_fixtau_fixrho(fixtau_new, fixrho_new, tol);
@@ -1302,7 +1307,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id,
             }
             m_fixtau = fixtau_old;
             m_fixrho = fixrho_old;
-            glmmkin = glmmkin_ai(fit_null, maxiter, tol);
+            glmmkin = glmmkin_ai(fit_null, verbose, maxiter, tol);
             fixtau_new = logic_update_fixed_condtion(m_tau, tol);
             update_fixtau_fixrho(fixtau_new, fixrho_new, tol);
         }
@@ -1348,6 +1353,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
                             std::ext::V_int pheno_valid_indices,
                             std::ext::V_string cov_selected_hdrs, 
                             std::string rand_slope_hdr,
+                            bool verbose,
                             std::string const groups,
                             std::string const method, 
                             std::string method_optim, 
@@ -1417,11 +1423,14 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     std::ext::V_double cov_data = conv_dm2stdV(m_X); 
     m_n_sel_col = cov_selected_hdrs.size();
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
-                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta); 
+                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, verbose); 
 
     std::cout << std::flush;
-    std::cout << "****************************************************************************\n";
-    std::cout << "Start association test...\n \n";
+    if(verbose)
+    {
+        std::cout << "****************************************************************************\n";
+        std::cout << "Start association test...\n \n";
+    }
     new_y.clear();
     fit_null = gf.convert_2_fit(); 
     if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))
@@ -1497,7 +1506,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         
     }
 
-    glmmkin = glmmkin_fit(fit_null, group_id, method, method_optim, 
+    glmmkin = glmmkin_fit(fit_null, group_id, verbose, method, method_optim, 
                           maxiter, tol, tau_min, tau_max, tau_region);
 
     glmmkin_residuals glmmkin_results;

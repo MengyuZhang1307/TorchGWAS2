@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument("--out", type=str, default="out.txt", help="Output file name")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Computation device (default: cuda)")
     parser.add_argument("--verbose", action="store_true", help="Print null model(default: False)")
-    parser.add_argument("--convert", action="store_false", help="Convert binary to text file (default: True)")
+    parser.add_argument("--convert", action="store_true", help="Convert binary to text file (default: True)")
     return parser.parse_args()
 
 def main():
@@ -75,7 +75,8 @@ def main():
         kin_diag=args.kin_diag,
         threads=args.threads,
         # num_chunks=args.num_chunks,
-        outfile=args.out
+        outfile=args.out,
+        verbose = args.verbose
     )
 
     runner = GEMRunner(confopt.get())
@@ -90,7 +91,7 @@ def main():
     print("\n TorchGWAS completed successfully.")
     print(f"Wall time: {(end_time - start_time):.2f} seconds")
     if args.convert:
-        parquet_to_text_duckdb(input_file="TGWAS_" + args.out + ".parquet", output_file=args.out + "txt")
+        parquet_to_text_duckdb(input_file="TGWAS_" + args.out + ".parquet", output_file=args.out + ".txt")
 
 if __name__ == "__main__":
     main()

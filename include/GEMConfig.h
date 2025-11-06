@@ -28,6 +28,6 @@ struct GEMOptions
     int threads;
     int num_chunks = 0;
     std::string outfile = "Bgen_dosage.out";
-    // Determine type of genotype file
+    bool verbose = false;
     GEMOptions(); 
 };

@@ -190,8 +190,6 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
             if isinstance(v[0], str):
                 # v = [s.rstrip('\x00') for s in v]
                 meta_arrays.append(pa.array(v, type=pa.string()))
-                # print(type(v[0]), len(v[0]), repr(v[0][:50]))
-                # input("test")
             elif isinstance(v[0], (int, np.integer)):
                 meta_arrays.append(pa.array(v, type=pa.int32()))
             else:
