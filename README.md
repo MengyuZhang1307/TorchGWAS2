@@ -23,12 +23,27 @@ A GPU-accelerated GWAS analysis tool with efficient null model fitting and PyTor
 ### Build the Docker Image
 
 ```bash
+# Clone the repository
+git clone https://github.com/MengyuZhang1307/Bgen-reader-torchgwas.git
+cd Bgen-reader-torchgwas
+
+# Build the Docker image (this will take 10-15 minutes)
 docker build -t torchgwas:latest .
+
+# Verify the image was built successfully
+docker images | grep torchgwas
 ```
+
+**Image Details:**
+- Size: ~10.8 GB
+- Base: nvidia/cuda:12.6.0-runtime-ubuntu24.04
+- Includes: All dependencies (GCC, CMake, MKL, Boost, PyTorch, etc.)
 
 ## Usage
 
-### Run with GPU Support
+### Run with GPU Support (Requires NVIDIA Docker Runtime???????)
+
+**Note:** GPU support requires `nvidia-docker2` package installed on your host system. If not available, use CPU mode below.
 
 ```bash
 docker run --gpus all \
@@ -43,14 +58,17 @@ docker run --gpus all \
   --threads 10 \
   --stream-snps 1000 \
   --out /data/results.txt \
-  --device cuda
+  --device cuda \
+  --verbose \
+  --convert
 ```
 
-### Run with CPU Only
+### Run with CPU Only (No GPU Required)
 
 ```bash
-docker run \
+docker run --rm \
   -v /path/to/your/data:/data \
+  -w /data \
   torchgwas:latest \
   --pheno-file /data/pheno.txt \
   --cov-file /data/cov.txt \
@@ -61,7 +79,40 @@ docker run \
   --threads 10 \
   --stream-snps 1000 \
   --out /data/results.txt \
-  --device cpu
+  --device cpu \
+  --verbose \
+  --convert
+```
+
+### Run Example Data
+
+Test the installation with provided example data:
+
+```bash
+# Navigate to repository directory
+cd Bgen-reader-torchgwas
+
+# Run example analysis (CPU mode)
+docker run --rm \
+  -v $(pwd):/workspace \
+  -w /workspace \
+  torchgwas:latest \
+  --pheno-file example/pheno.txt \
+  --cov-file example/cov.txt \
+  --bgen example/SA.bgen \
+  --sample example/SA.sample \
+  --sampleid-name id \
+  --covar-names x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 \
+  --kin-file example/kinfile.txt \
+  --kin-delim tab \
+  --kin-diag 1 \
+  --threads 10 \
+  --stream-snps 100 \
+  --out example/results.txt \
+  --device cpu \
+  --verbose
+
+# Results will be in example/results.txt and example/TGWAS_results.txt.parquet
 ```
 
 ### Interactive Shell Access
@@ -271,27 +322,42 @@ rs67890    1    20000    C    T    -0.02    0.018    -1.1    0.27    0.01    0.0
 - **I/O Libraries**: Boost (program_options, thread, system, filesystem)
 - **Compression**: zstd 1.5.5, libdeflate 1.18
 - **Genotype Reading**: PLINK 2.0 BGEN reader
-- **Python Bindings**: pybind11 v2.12.0
+- **Python Bindings**: pybind11 v2.12.0, fmt 11.0.2
 
 ### Runtime Stage (nvidia/cuda:12.6.0-runtime-ubuntu24.04)
-- **CUDA**: 12.6 runtime for GPU acceleration
-- **PyTorch**: With CUDA 12.1 support
-- **MKL Runtime**: Intel MKL libraries (sequential threading)
-- **Python Stack**: NumPy, Pandas, SciPy
+- **CUDA**: 12.6 runtime for GPU acceleration (backward compatible with PyTorch CUDA 12.1)
+- **PyTorch**: 2.5.1+cu121 with CUDA 12.1 support
+- **MKL Runtime**: Intel MKL libraries (sequential threading, no OpenMP conflicts)
+- **Python Stack**: NumPy, Pandas, SciPy, PyArrow, DuckDB, tqdm
+- **Image Size**: ~10.8 GB
 
 ### Container File Locations
 ```
 /app/                               # Application directory
 ├── pymodules/                      # Python modules
-│   ├── ConfOpt.py                 # Configuration
-│   ├── GEMRunner.py               # Null model runner
-│   └── run_gwas.py                # GWAS analysis
-└── RunTorchGWAS.py                # Main entry point
+│   ├── Mygen.so                   # C++ extension module (GWAS core)
+│   ├── ConfigueOpt.py             # Configuration wrapper
+│   ├── TorchGWAS.py               # GWAS analysis functions
+│   └── ReadParquet.py             # Result conversion utilities
+└── RunTorchGWAS.py                # Main CLI entry point
 
-/usr/local/bin/GEM2                # Null model fitting binary
+/opt/intel/oneapi/mkl/latest/       # Intel MKL libraries
+/opt/venv/                          # Python virtual environment
 
-/data/                              # Mount your data here
+/workspace/                         # Default working directory (mount your data here)
 ```
+
+### Key Dependencies
+All libraries are statically linked into `Mygen.so` to avoid runtime dependency issues:
+- fmt (v11.0.2) - String formatting
+- Armadillo (v14.0.1) - Matrix operations  
+- Eigen (v3.4.0) - Linear algebra
+- pybind11 (v2.12.0) - Python bindings
+- SuiteSparse (v7.8.2) - Sparse matrix operations
+
+External runtime dependencies (dynamically linked):
+- MKL (Intel Math Kernel Library) - BLAS/LAPACK
+- Boost (v1.83.0) - thread, system, filesystem, program_options
 
 ## Performance Tips
 
@@ -353,12 +419,26 @@ head -1 /data/cov.txt  # Shows: id,PC1,PC2,PC3
 
 ### Docker GPU Access
 ```bash
-# Test GPU access
+# Test if GPU is accessible from Docker
 docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi
 
-# Install nvidia-docker2 if needed (Ubuntu/Debian)
-sudo apt install nvidia-docker2
+# If you get error "could not select device driver with capabilities: [[gpu]]"
+# You need to install nvidia-docker2:
+
+# For Ubuntu/Debian:
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+sudo apt-get update && sudo apt-get install -y nvidia-docker2
 sudo systemctl restart docker
+
+# Verify installation
+docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi
+
+# If GPU is not available or not needed, simply use CPU mode:
+# Remove --gpus all flag and set --device cpu
 ```
 
 ### GPU Out of Memory

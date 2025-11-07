@@ -98,11 +98,6 @@ RUN mkdir build && cd build && \
 cmake .. && \
 make -j$(nproc)
 
-# Install PyTorch and Python dependencies for run_gwas
-RUN pip3 install --no-cache-dir \
-    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
-    numpy pandas scipy
-
 # Stage 2: Runtime image with CUDA support
 FROM nvidia/cuda:12.6.0-runtime-ubuntu24.04
 
@@ -114,37 +109,55 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     time \
     python3 \
     python3-pip \
+    python3-venv \
     libgomp1 \
+    libboost-thread1.83.0 \
+    libboost-system1.83.0 \
+    libboost-filesystem1.83.0 \
+    libboost-program-options1.83.0 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy MKL libraries from builder
+# Copy MKL libraries from builder (entire directory for simplicity)
 COPY --from=builder /opt/intel/oneapi/mkl/latest/lib/intel64 /opt/intel/oneapi/mkl/latest/lib/intel64
 
 # Set MKL environment for runtime
 ENV MKLROOT=/opt/intel/oneapi/mkl/latest
-ENV LD_LIBRARY_PATH=${MKLROOT}/lib/intel64:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=${MKLROOT}/lib/intel64:/usr/local/lib:${LD_LIBRARY_PATH}
 ENV MKL_THREADING_LAYER=GNU
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
 
-# Copy just the final binary from the builder
-COPY --from=builder /GEM_BUILD/build/GEM_2.1.3 /usr/local/bin/GEM2
-
-# Set default entry point
-#ENTRYPOINT ["GEM2"]
-# Copy Python modules and scripts
+# Copy Python modules and scripts (including Mygen.so)
 COPY --from=builder /GEM_BUILD/pymodules /app/pymodules
 COPY --from=builder /GEM_BUILD/RunTorchGWAS.py /app/RunTorchGWAS.py
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir \
+# Update library cache so the system can find the libraries
+RUN ldconfig
+
+# Create isolated Python environment and install packages
+# Split into separate RUN commands and clean up after each to reduce layer size
+RUN python3 -m venv /opt/venv
+
+# Install PyTorch from CUDA index
+RUN /opt/venv/bin/pip install --no-cache-dir \
     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
-    numpy pandas scipy
+ && find /opt/venv -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+ && find /opt/venv -type f -name '*.pyc' -delete \
+ && find /opt/venv -type f -name '*.pyo' -delete \
+ && rm -rf /opt/venv/lib/python3.12/site-packages/torch/test
+
+# Install other Python packages from PyPI
+RUN /opt/venv/bin/pip install --no-cache-dir \
+    numpy pandas scipy duckdb pyarrow tqdm \
+ && find /opt/venv -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+ && find /opt/venv -type f -name '*.pyc' -delete \
+ && find /opt/venv -type f -name '*.pyo' -delete
+
+# Set PATH and PYTHONPATH
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH=/app:${PYTHONPATH}
 
 WORKDIR /app
-
-# Set Python path
-ENV PYTHONPATH=/app:${PYTHONPATH}
 
 # Default to running RunTorchGWAS.py
 ENTRYPOINT ["python3", "/app/RunTorchGWAS.py"]
