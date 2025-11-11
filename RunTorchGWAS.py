@@ -88,7 +88,7 @@ def main():
     TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name)    
     print("Starting dosage streaming and GWAS ...")
-    run_gwas(runner, in_file=intermediate_file, out_file=TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
+    run_gwas(runner,intermediate_file, TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
 
     end_time = time.time()
     print("\n TorchGWAS completed successfully.")

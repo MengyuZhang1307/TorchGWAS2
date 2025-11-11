@@ -4,7 +4,7 @@ import time
 
 def parquet_to_text_duckdb(
     input_file: str,
-    output_file: str = None,
+    output_file: str,
     num_threads: int = 16,
     memory_limit: str = "200GB",
 ):
@@ -15,16 +15,13 @@ def parquet_to_text_duckdb(
     ----------
     input_file : str
         Path to the Parquet file.
-    output_file : str, optional
+    output_file : str
         Path to save the text file. If None, adds '_converted.txt' to input name.
     num_threads : int, optional
         Number of CPU threads to use (default=8).
     memory_limit : str, optional
         Maximum memory allowed for DuckDB (default='200GB').
     """
-
-    if output_file is None:
-        output_file = os.path.splitext(input_file)[0] + "_converted.txt"
 
     start_time = time.time()
 
