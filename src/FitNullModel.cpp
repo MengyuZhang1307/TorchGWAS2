@@ -659,7 +659,15 @@ void NullModel::print_res(
     std::ext::VV_string const& id_include,
     std::ext::VV_double const& output_matrix)
 {
-    std::ofstream out("intermediate_" + output);
+    fs::path out_path(output);                            // convert string → path
+    fs::path out_dir = out_path.parent_path();            // "/data"
+    fs::path out_name = out_path.filename();              // "out_param-buff-11-10-noverbose"
+    fs::path inter_path = out_dir / ("intermediate_" + out_name.string());    
+    std::ofstream out(inter_path);                        // open file for writing
+    if (!out.is_open()) {
+        std::cerr << " Failed to open " << inter_path << " for writing.\n";
+        std::exit(EXIT_FAILURE);
+    }
     out << "smaple_id" << '\t';
     // Header line: phenotype names
     for (size_t i = 2; i < pheno_column_names.size(); ++i) 

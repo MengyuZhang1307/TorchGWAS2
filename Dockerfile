@@ -1,3 +1,6 @@
+#docker build --build-arg BASE_IMAGE=nvidia/cuda:12.6.0-runtime-ubuntu24.04 -t tgwas:cuda12.6 .
+
+ARG BASE_IMAGE=nvidia/cuda:12.4.0-runtime-ubuntu22.04
 # Use Ubuntu 24.04 as base
 FROM ubuntu:24.04 AS builder
 
@@ -99,7 +102,11 @@ cmake .. && \
 make -j$(nproc)
 
 # Stage 2: Runtime image with CUDA support
-FROM nvidia/cuda:12.6.0-runtime-ubuntu24.04
+#FROM nvidia/cuda:12.6.0-runtime-ubuntu24.04
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+RUN echo "Checking CUDA version..." && \
+    nvidia-smi || cat /usr/local/cuda/version.txt || cat /usr/local/cuda/version || echo "CUDA not found!"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

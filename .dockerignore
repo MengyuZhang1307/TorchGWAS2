@@ -1,41 +1,10 @@
-# Exclude large result files
-*.parquet
-df_results*.txt
-test_output.txt
-
-# Exclude example data directory (6.5GB)
-example/
-
-# Exclude build artifacts
 build/
-*.o
-*.so
-*.a
-
-# Exclude Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-
-# Exclude documentation and setup scripts not needed in container
-miniconda.sh
-REQUIREMENTS.md
-SETUP_GUIDE.md
-imaging_genetics_workflow.ipynb
-simulation_mengyu.py
-test_environment.py
-setup_environment.sh
-setup_environment.py
-
-# Exclude git files
-.git/
-.gitignore
-
-# Exclude test files
+data/
 test/
+example/
+missing-simulationbyMengyu/
+split_txt/
+build*/
+out*
+output/
 
-# Exclude Dockerfiles themselves
-Dockerfile*
-.dockerignore

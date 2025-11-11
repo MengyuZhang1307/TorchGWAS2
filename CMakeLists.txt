@@ -204,14 +204,7 @@ if(CHOLMOD_LIB AND CXSPARSE_LIB AND SPQR_LIB AND UMFPACK_LIB AND CAMD_LIB AND CC
 else()
     message(FATAL_ERROR "System-installed SuiteSparse libraries not found")
 endif()
-# #nlohmann/json=================================================================
-# FetchContent_Declare(
-#   json
-#   GIT_REPOSITORY https://github.com/nlohmann/json.git
-#   GIT_TAG v3.11.3   # or latest stable release
-# )
 
-# FetchContent_MakeAvailable(json)
 # Set executable for Python module ============================================
 add_library(Mygen MODULE ${SOURCES})
 

@@ -93,12 +93,14 @@ def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
         return geno_mean, geno_std, t_stats, beta_coeffs, se
 
 
-def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=False):
+def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device='cuda',  compress=False):
     """
     Run GWAS using a pre-configured GEMRunner instance.
     """
- 
-    ph_headers, c2_values, corrected_res = read_correction_file("intermediate_" + out_file) # read corrected_res, c2 and ph_headers from file
+    # dir_name = os.path.dirname(out_file)
+    # base_name = os.path.basename(out_file)
+    # intermediate_file = os.path.join(dir_name, "intermediate_" + base_name)
+    ph_headers, c2_values, corrected_res = read_correction_file(intermediate_file) # read corrected_res, c2 and ph_headers from file
     
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -154,9 +156,9 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
     rows_in_buffer = 0
     buffer = []
     writer = None
-    out_path = "TGWAS_" + out_file
-    if os.path.exists(out_path + ".parquet"):
-        os.remove(out_path + ".parquet")
+
+    if os.path.exists(TGWAS_file):
+        os.remove(TGWAS_file)
 
     start = time.time()
 
@@ -210,7 +212,7 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
             # feather.write_feather(combined, out_path + ".feather", compression="zstd")
             if writer is None:
                 writer = pq.ParquetWriter(
-                out_path + ".parquet", combined.schema, compression="snappy"
+                TGWAS_file, combined.schema, compression="snappy"
             )
             writer.write_table(combined)
             rows_in_buffer = 0
@@ -226,7 +228,7 @@ def run_gwas(runner, out_file, snps_per_chunk=1000, device='cuda',  compress=Fal
         # feather.write_feather(combined, out_path + ".feather", compression="zstd")
         if writer is None:
                 writer = pq.ParquetWriter(
-                out_path + ".parquet", combined.schema, compression="snappy"
+                TGWAS_file, combined.schema, compression="snappy"
             )
         writer.write_table(combined)
         buffer.clear()

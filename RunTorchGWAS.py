@@ -83,15 +83,19 @@ def main():
 
     print("Running null model fitting ...")
     runner.run_fit_nullmodel()
-
+    dir_name = os.path.dirname(args.out)
+    base_name = os.path.basename(args.out)
+    TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
+    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name)    
     print("Starting dosage streaming and GWAS ...")
-    run_gwas(runner, out_file=args.out, snps_per_chunk=args.stream_snps, device=args.device)
+    run_gwas(runner, in_file=intermediate_file, out_file=TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
 
     end_time = time.time()
     print("\n TorchGWAS completed successfully.")
     print(f"Wall time: {(end_time - start_time):.2f} seconds")
     if args.convert:
-        parquet_to_text_duckdb(input_file="TGWAS_" + args.out + ".parquet", output_file=args.out + ".txt")
+        output_file= os.path.join(dir_name, base_name + ".txt") 
+        parquet_to_text_duckdb(in_file=TGWAS_file, out_file=output_file)
 
 if __name__ == "__main__":
     main()

@@ -6,6 +6,7 @@
 #include "MatrixUtils.h"
 #include "ReadBGEN.h"
 #include "TimeUtils.h"
+#include <filesystem>
 
 void center(int center, int scale, int samSize, int numSelCol, std::ext::V_double covdata, std::ext::V_double* covdata_ret);
 void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon, 
