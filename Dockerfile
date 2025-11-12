@@ -1,19 +1,32 @@
 #docker build --build-arg BASE_IMAGE=nvidia/cuda:12.6.0-runtime-ubuntu24.04 -t tgwas:cuda12.6 .
 
 ARG BASE_IMAGE=nvidia/cuda:12.4.0-runtime-ubuntu22.04
-# Use Ubuntu 24.04 as base
-FROM ubuntu:24.04 AS builder
+# Stage 1 Use Ubuntu 22.04 as base
+FROM ubuntu:22.04 AS builder
 
 # Required for noninteractive installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install compilers and basic dependencies
 
-RUN apt update && \
-    apt install -y --no-install-recommends \
-        gpg wget git gcc g++ cmake make \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gpg wget git cmake make \
         zlib1g-dev libzstd-dev dstat atop \
         python3 python3-pip python3-dev
+
+# Install GCC 13 and make it the default compiler
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends software-properties-common gpg-agent && \
+    add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
+    apt-get update && \
+    apt-get install -y gcc-13 g++-13 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+
+# Verify compiler versions
+RUN gcc --version && g++ --version
 
 # Install Intel MKL via official oneAPI APT repo
 RUN apt-get update && apt-get install -y gnupg ca-certificates && \
@@ -31,12 +44,13 @@ ENV LD_LIBRARY_PATH=${MKLROOT}/lib/intel64:${LD_LIBRARY_PATH}
 ENV LIBRARY_PATH=${MKLROOT}/lib/intel64:${LIBRARY_PATH}
 ENV PKG_CONFIG_PATH=${MKLROOT}/bin/mkl_link_tool
 
-# RUN apt-get update && apt-get install -y libboost-*-dev
+# RUN apt-get update && apt-get install -y libboost-*-dev and # Install SuiteSparse dependencies
 RUN apt-get update && apt-get install -y \
     libboost-thread-dev \
     libboost-system-dev \
     libboost-filesystem-dev \
-    libboost-program-options-dev 
+    libboost-program-options-dev \
+    libgmp-dev libmpfr-dev pkg-config
 
 # Install Eigen
 RUN cd /tmp && \
@@ -51,11 +65,6 @@ RUN cd /tmp && \
     tar -xf armadillo-code-14.0.1.tar.gz && \
     cp -r armadillo-code-14.0.1/include /usr/local/include/armadillo && \
     rm -rf /tmp/*
-# Install SuiteSparse dependencies
-RUN apt-get update && apt-get install -y \
-libgmp-dev \
-libmpfr-dev \
-pkg-config
 
 # Clone SuiteSparse
 RUN git clone https://github.com/DrTimothyAldenDavis/SuiteSparse.git
@@ -118,11 +127,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-venv \
     libgomp1 \
-    libboost-thread1.83.0 \
-    libboost-system1.83.0 \
-    libboost-filesystem1.83.0 \
-    libboost-program-options1.83.0 \
+    libboost-thread-dev \
+    libboost-system-dev \
+    libboost-filesystem-dev \
+    libboost-program-options-dev \
+    libstdc++6 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# COPY libstdc++6 to ensure compatible version is present
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
 # Copy MKL libraries from builder (entire directory for simplicity)
 COPY --from=builder /opt/intel/oneapi/mkl/latest/lib/intel64 /opt/intel/oneapi/mkl/latest/lib/intel64

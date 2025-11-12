@@ -51,10 +51,10 @@ docker run --gpus all \
   torchgwas:latest \
   --pheno-file /data/pheno.txt \
   --cov-file /data/cov.txt \
-  --bgen /data/genotypes.bgen \
-  --sample /data/samples.sample \
+  --bgen /data/SA.bgen \
+  --sample /data/SA.sample \
   --sampleid-name IID \
-  --covar-names PC1 PC2 PC3 \
+  --covar-names x1 x2 x3 \
   --threads 10 \
   --stream-snps 1000 \
   --out /data/results.txt \
@@ -500,10 +500,10 @@ docker run --gpus all \
   torchgwas:latest \
   --pheno-file /data/pheno.txt \
   --cov-file /data/cov.txt \
-  --bgen /data/genotypes.bgen \
-  --sample /data/samples.sample \
-  --sampleid-name IID \
-  --covar-names PC1 PC2 PC3 age sex \
+  --bgen /data/SA.bgen \
+  --sample /data/SA.sample \
+  --sampleid-name id \
+  --covar-names x1 x2 x3 x4 x5 \
   --threads 16 \
   --stream-snps 1000 \
   --out /data/gwas_results.txt \
