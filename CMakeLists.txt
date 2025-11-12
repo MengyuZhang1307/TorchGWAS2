@@ -34,7 +34,7 @@ FetchContent_Declare(fmt
 )
 FetchContent_MakeAvailable(fmt)
 #PYBIND11=================================================================
-set(PYBIND11_PYTHON_VERSION 3.11)
+set(PYBIND11_PYTHON_VERSION 3.10)
 # set(ENV{LD_LIBRARY_PATH} "$ENV{HOME}/local/Python-3.11.6/")
 FetchContent_Declare(
   pybind11
