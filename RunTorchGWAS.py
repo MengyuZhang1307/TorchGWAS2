@@ -4,13 +4,80 @@ import pandas as pd
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "pymodules"))
 from pymodules import ConfOpt
-# import Mygen
 from pymodules import GEMRunner
 from pymodules import run_gwas
 from pymodules import parquet_to_text_duckdb
 import numpy as np
 import time
 import argparse
+import logging
+from contextlib import redirect_stdout, redirect_stderr
+import io
+import tempfile
+
+class CaptureCStdout:
+    def __enter__(self):
+        self._orig_stdout_fd = sys.stdout.fileno()
+
+        # Save a duplicate of the original file descriptor
+        self._saved_stdout_fd = os.dup(self._orig_stdout_fd)
+
+        # Create a temporary file to capture output
+        self._tmpfile = tempfile.TemporaryFile(mode="w+b")
+
+        # Redirect stdout to the temporary file
+        os.dup2(self._tmpfile.fileno(), self._orig_stdout_fd)
+
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Restore the original stdout
+        os.dup2(self._saved_stdout_fd, self._orig_stdout_fd)
+
+        # Read captured output
+        self._tmpfile.seek(0)
+        self.output = self._tmpfile.read().decode()
+
+        # Cleanup
+        self._tmpfile.close()
+        os.close(self._saved_stdout_fd)
+class CaptureCStderr:
+    def __enter__(self):
+        self.fd = sys.stderr.fileno()
+        self.saved_fd = os.dup(self.fd)
+        self.tmp = tempfile.TemporaryFile(mode="w+b")
+        os.dup2(self.tmp.fileno(), self.fd)
+        return self
+
+    def __exit__(self, *args):
+        os.dup2(self.saved_fd, self.fd)
+        os.close(self.saved_fd)
+        self.tmp.seek(0)
+        self.output = self.tmp.read().decode()
+        self.tmp.close()
+
+def setup_logger(out_path):
+    """Create a logger that prints to both file and console."""
+    log_file = out_path 
+
+    logger = logging.getLogger("TGWAS")
+    logger.setLevel(logging.INFO)
+
+    fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s",
+                            datefmt="%Y-%m-%d %H:%M:%S")
+
+    # File handler
+    fh = logging.FileHandler(log_file, mode="a")
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setFormatter(fmt)
+    logger.addHandler(ch)
+
+    return logger
+
 
 def normalize_delim(s):
     # Convert to single-character delimiter that C++ expects
@@ -52,9 +119,9 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    args = parse_args()
     start_time = time.time()
-
+    args = parse_args()
+    
     confopt = ConfOpt(
         pheno_add=args.pheno_file,
         pheno_delim=normalize_delim(args.pheno_delim),
@@ -78,25 +145,45 @@ def main():
         outfile=args.out,
         verbose = args.verbose
     )
-
-    runner = GEMRunner(confopt.get())
-
-    print("Running null model fitting ...")
-    runner.run_fit_nullmodel()
     dir_name = os.path.dirname(args.out)
     base_name = os.path.basename(args.out)
-    TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
-    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name)    
-    print("Starting dosage streaming and GWAS ...")
-    run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
+    log_file = os.path.join(dir_name, base_name + ".log") 
+    logger = setup_logger(log_file)
+    runner = GEMRunner(confopt.get())
+    logger.info("Running null model fitting ...")
+    cxx_buffer = io.StringIO()
 
-    end_time = time.time()
-    print("\n TorchGWAS completed successfully.")
-    print(f"Wall time: {(end_time - start_time):.2f} seconds")
+    with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
+        runner.run_fit_nullmodel()
+
+    merged = (cap_out.output + "\n" + cap_err.output).strip()
+    if merged:
+        logger.info("\n****************************** C++ Null Model Output ******************************\n" + merged)
+    else:
+        logger.info("No C++ output captured from null model.")
+
+    logger.info("Starting dosage streaming and GWAS...")
+    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt") 
+    TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
+    
+    with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+        run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
+    captured_output = cxx_buffer.getvalue().strip()
+    if captured_output:
+        logger.info("\n****************************** TGWAS Output ******************************\n" + captured_output)
+    cxx_buffer.seek(0)
+    cxx_buffer.truncate(0)
     if args.convert:
         output_file= os.path.join(dir_name, base_name + ".txt") 
-        parquet_to_text_duckdb(TGWAS_file, output_file)
+        with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+            parquet_to_text_duckdb(TGWAS_file, output_file)
+        captured_output_conversion = cxx_buffer.getvalue().strip()
+        if captured_output_conversion:
+            logger.info("\n******************************Conversion of Output Binary to Text******************************\n" + captured_output_conversion)
 
+    end_time = time.time()
+    logger.info("\n TorchGWAS completed successfully.")
+    logger.info(f"Wall time: {(end_time - start_time):.2f} seconds")
 if __name__ == "__main__":
     main()
 

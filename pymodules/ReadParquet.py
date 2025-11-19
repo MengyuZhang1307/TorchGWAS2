@@ -54,5 +54,5 @@ def parquet_to_text_duckdb(
         con.close()
 
     end_time = time.time()
-    print(f"Time elapsed: {end_time - start_time:.2f} seconds")
+    print(f"Time for converting binary to text file: {end_time - start_time:.2f} seconds")
 

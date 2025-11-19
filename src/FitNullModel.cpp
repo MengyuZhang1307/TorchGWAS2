@@ -662,7 +662,7 @@ void NullModel::print_res(
     fs::path out_path(output);                            // convert string → path
     fs::path out_dir = out_path.parent_path();            // "/data"
     fs::path out_name = out_path.filename();              // "out_param-buff-11-10-noverbose"
-    fs::path inter_path = out_dir / ("intermediate_" + out_name.string());    
+    fs::path inter_path = out_dir / ("intermediate_" + out_name.string() + ".txt");    
     std::ofstream out(inter_path);                        // open file for writing
     if (!out.is_open()) {
         std::cerr << " Failed to open " << inter_path << " for writing.\n";

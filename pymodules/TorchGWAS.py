@@ -239,4 +239,4 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     if writer is not None:
         writer.close()
     end = time.time()
-    print(f"time for chunk = {end - start:.2f}s")
+    print(f"time for calculating GWAS = {end - start:.2f}s")
