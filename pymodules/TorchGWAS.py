@@ -44,6 +44,117 @@ def read_correction_file(file_path: str):
 
     return header, c2, c_res, sample_ids
 
+def calc_cov_proj(runner_opt, resid_sample_ids, n_samples, device):
+    """
+    @brief Calculate covariate projection matrix A from covariate file.
+    @param runner_opt Runner options containing covariate file path and settings.
+    @param resid_sample_ids List of sample IDs from correction file.
+    @param n_samples Number of samples.
+    @param device Torch device to place tensors on.
+    @return proj_A: torch tensor on device
+        - proj_A: projection matrix A = (XᵀX)⁻¹Xᵀ
+        -cov_X: design matrix X
+    """
+    try:
+            # Fallback: read covariate file directly from runner options, or from python input.
+            cov_file = runner_opt.cov_add
+            cov_names = list(runner_opt.covariates) if hasattr(runner_opt, 'covariates') else []
+            # choose delimiter from runner options if present, otherwise default to tab
+            sep = getattr(runner_opt, 'cov_delim', '\t') or '\t'
+            # Read with pandas and select requested covariate columns; assume sample order matches genotype order
+            cov_df = pd.read_csv(cov_file, sep=sep)
+
+            # Hard-coded covariate format: first column = family ID, second column = sample ID.
+            # We will match residual/sample IDs using the sample ID (second) column and drop both
+            # ID columns before selecting numeric covariates.
+            cols = list(cov_df.columns)
+            if len(cols) < 2:
+                raise RuntimeError("Covariate file must have at least two columns: family ID and sample ID.")
+
+            # Use the column (sample ID) for matching to intermediate residual sample IDs
+            if hasattr(runner_opt, 'sampleid_header_name') and runner_opt.sampleid_header_name:
+                sample_id_col = runner_opt.sampleid_header_name
+                if sample_id_col not in cov_df.columns:
+                    raise RuntimeError(f"Sample ID column '{sample_id_col}' not found in covariate file.")
+                sample_ids_from_cov = cov_df[sample_id_col].astype(str).values
+            else:
+                raise RuntimeError(
+                    "You must specify --sampleid-name for covariate file. "
+                    "Default behavior of using the second column is disabled."
+                )
+
+            # Drop the two ID columns (FID and IID) to leave only covariate columns
+            # cov_df2 = cov_df.drop(columns=[cols[0], cols[1]])
+
+            # Select covariate columns
+            applied_covs = None
+            if cov_names:
+                try:
+                    cov_sel = cov_df[cov_names]
+                    applied_covs = list(cov_sel.columns)
+                except Exception:
+                    # fallback: take numeric columns
+                    cov_sel = cov_df.select_dtypes(include=[np.number])
+                    applied_covs = list(cov_sel.columns)
+            else:
+                cov_sel = cov_df.select_dtypes(include=[np.number])
+                applied_covs = list(cov_sel.columns)
+
+            # Reorder covariates to match residual/sample ID order from intermediate file (Check 2: match the Sample ID)
+            try:
+                # resid_sample_ids is read from the intermediate file earlier
+                cov_sel = cov_sel.copy()
+                cov_sel['_sample_id_for_match'] = sample_ids_from_cov
+                cov_sel.set_index('_sample_id_for_match', inplace=True)
+                # Reindex to the residual sample ID order; this will introduce NaN for missing rows
+                cov_sel = cov_sel.reindex(resid_sample_ids)
+                # If any missing after reindex, fail early
+                if cov_sel.isnull().values.any():
+                    missing = cov_sel.isnull().any(axis=1)
+                    n_missing = int(missing.sum())
+                    raise RuntimeError(f"Covariate file does not contain values for {n_missing} residual samples (after reindex).")
+                # drop index and continue
+                cov_sel.reset_index(drop=True, inplace=True)
+            except Exception as e:
+                raise
+
+            cov_np = cov_sel.astype(float).values
+
+            # Validate shape
+            if cov_np.shape[0] != n_samples:
+                # try transpose if user provided (n_covariates, n_samples)
+                if cov_np.shape[1] == n_samples:
+                    cov_np = cov_np.T
+                else:
+                    raise RuntimeError(f"Covariate shape mismatch: expected {n_samples} samples, got {cov_np.shape}")
+
+            # Build design matrix with intercept
+            intercept = np.ones((n_samples, 1), dtype=cov_np.dtype)
+            cov_X_n = np.hstack([intercept, cov_np])  # shape (n_samples, p+1)
+
+            ########################-Move to GPU-########################
+            cov_X = torch.from_numpy(cov_X_n).to(device).float()
+            # Compute XᵀX
+            XtX = cov_X.T @ cov_X
+            # Invert XᵀX
+            inv_XtX = torch.linalg.inv(XtX)
+            # Compute projection A
+            proj_A = inv_XtX @ cov_X.T
+
+            # Inform what covariates are applied (if known)
+            if applied_covs is None:
+                print("Info: genotype residualization: covariates obtained from runner.get_covariates()", flush=True)
+            elif len(applied_covs) == 0:
+                print("Info: genotype residualization: intercept only (no covariates)", flush=True)
+            else:
+                print(f"Info: genotype residualization will use covariates: {applied_covs}", flush=True)
+
+    except Exception as e:
+        print(f"Warning: failed to prepare covariate projection: {e}", flush=True)
+        cov_X = None
+        proj_A = None
+
+    return proj_A, cov_X
 
 def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
     """
@@ -140,126 +251,17 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     gamma_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     
     buffer_size = 100_000
-
-    # If requested, prepare covariate projection to regress covariates out of genotypes (Check 1: before loop for each batches of SNPs)
-    # cov_X = None
+    cov_X, proj_A = None, None
     start_readcov = time.time()
-    cov_X = None
-    proj_A = None
     if regress_genotypes:
-        try:
-            # applied_covs = None
-            # # Primary: call runner-provided accessor if available
-            # if hasattr(runner, "get_covariates"):
-            #     cov_np = np.asarray(runner.get_covariates())  # shape (n_samples, n_covariates)
-            #     applied_covs = None
-            # else:
-            # Fallback: read covariate file directly from runner options, or from python input.
-            cov_file = runner.opt.cov_add
-            cov_names = list(runner.opt.covariates) if hasattr(runner.opt, 'covariates') else []
-            if not cov_names:
-                # allow using all numeric columns if no explicit covariate names provided
-                cov_names = []
-            # choose delimiter from runner options if present, otherwise default to tab
-            sep = getattr(runner.opt, 'cov_delim', '\t') or '\t'
-            # Read with pandas and select requested covariate columns; assume sample order matches genotype order
-            cov_df = pd.read_csv(cov_file, sep=sep)
-
-            # Hard-coded covariate format: first column = family ID, second column = sample ID.
-            # We will match residual/sample IDs using the sample ID (second) column and drop both
-            # ID columns before selecting numeric covariates.
-            cols = list(cov_df.columns)
-            if len(cols) < 2:
-                raise RuntimeError("Covariate file must have at least two columns: family ID and sample ID.")
-
-            # Use the column (sample ID) for matching to intermediate residual sample IDs
-            if hasattr(runner.opt, 'sampleid_header_name') and runner.opt.sampleid_header_name:
-                sample_id_col = runner.opt.sampleid_header_name
-                if sample_id_col not in cov_df.columns:
-                    raise RuntimeError(f"Sample ID column '{sample_id_col}' not found in covariate file.")
-                sample_ids_from_cov = cov_df[sample_id_col].astype(str).values
-            else:
-                raise RuntimeError(
-                    "You must specify --sampleid-name for covariate file. "
-                    "Default behavior of using the second column is disabled."
-                )
-
-            # Drop the two ID columns (FID and IID) to leave only covariate columns
-            # cov_df2 = cov_df.drop(columns=[cols[0], cols[1]])
-
-            # Select covariate columns
-            if cov_names:
-                try:
-                    cov_sel = cov_df[cov_names]
-                    applied_covs = list(cov_sel.columns)
-                except Exception:
-                    # fallback: take numeric columns
-                    cov_sel = cov_df.select_dtypes(include=[np.number])
-                    applied_covs = list(cov_sel.columns)
-            else:
-                cov_sel = cov_df.select_dtypes(include=[np.number])
-                applied_covs = list(cov_sel.columns)
-
-            # Reorder covariates to match residual/sample ID order from intermediate file (Check 2: match the Sample ID)
-            try:
-                # resid_sample_ids is read from the intermediate file earlier
-                cov_sel = cov_sel.copy()
-                cov_sel['_sample_id_for_match'] = sample_ids_from_cov
-                cov_sel.set_index('_sample_id_for_match', inplace=True)
-                # Reindex to the residual sample ID order; this will introduce NaN for missing rows
-                cov_sel = cov_sel.reindex(resid_sample_ids)
-                # If any missing after reindex, fail early
-                if cov_sel.isnull().values.any():
-                    missing = cov_sel.isnull().any(axis=1)
-                    n_missing = int(missing.sum())
-                    raise RuntimeError(f"Covariate file does not contain values for {n_missing} residual samples (after reindex).")
-                # drop index and continue
-                cov_sel.reset_index(drop=True, inplace=True)
-            except Exception as e:
-                raise
-
-            cov_np = cov_sel.astype(float).values
-
-            # Validate shape
-            if cov_np.shape[0] != n_samples:
-                # try transpose if user provided (n_covariates, n_samples)
-                if cov_np.shape[1] == n_samples:
-                    cov_np = cov_np.T
-                else:
-                    raise RuntimeError(f"Covariate shape mismatch: expected {n_samples} samples, got {cov_np.shape}")
-
-            # Build design matrix with intercept
-            intercept = np.ones((n_samples, 1), dtype=cov_np.dtype)
-            cov_X_n = np.hstack([intercept, cov_np])  # shape (n_samples, p+1)
-            # Compute projection coefficients matrix A = (X^T X)^{-1} X^T
-            # XtX = cov_X.T @ cov_X
-            # # use pseudo-inverse for numerical stability
-            # inv_XtX = np.linalg.inv(XtX)
-            # proj_A = inv_XtX @ cov_X.T  # shape (p+1, n_samples)
-            ########################-Move to GPU-########################
-            cov_X = torch.from_numpy(cov_X_n).to(device).float()
-            # Compute XᵀX
-            XtX = cov_X.T @ cov_X
-            # Invert XᵀX
-            inv_XtX = torch.linalg.inv(XtX)
-            # Compute projection A
-            proj_A = inv_XtX @ cov_X.T
-
-            # Inform what covariates are applied (if known)
-            if applied_covs is None:
-                print("Info: genotype residualization: covariates obtained from runner.get_covariates()", flush=True)
-            elif len(applied_covs) == 0:
-                print("Info: genotype residualization: intercept only (no covariates)", flush=True)
-            else:
-                print(f"Info: genotype residualization will use covariates: {applied_covs}", flush=True)
-
-        except Exception as e:
-            print(f"Warning: failed to prepare covariate projection: {e}", flush=True)
-            cov_X_n = None
-            proj_A = None
-
-    end_cov = time.time()
-    print(f"time for reading covariate file and preparing projection = {end_cov - start_readcov:.2f}s")
+        proj_A, cov_X,  = calc_cov_proj(
+        runner.opt,
+        resid_sample_ids,
+        n_samples,
+        device)
+    end_readcov = time.time()
+    print(f"Time for reading covariate file and preparing projection = {end_readcov - start_readcov:.2f}s")
+ 
     headers = [
     "SNPID",
     "RSID",
@@ -297,7 +299,8 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         # Regress covariates out of genotypes (Check 3: should operate on GPU)
         if proj_A is not None and chunk_data is not None:
             try:
-                G = torch.from_numpy(chunk_data).float().to(device)  # shape (M, n_samples)
+                # G = torch.from_numpy(chunk_data).float().to(device)  # shape (M, n_samples)
+                G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)
                 coeffs = proj_A @ G.T
                 fitted = cov_X @ coeffs
                 G_resid = G - fitted.T
@@ -306,20 +309,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
             except Exception as e:
                 print(f"Warning: failed to regress covariates: {e}", flush=True)
 
-        
-        # if proj_A is not None and chunk_data is not None:
-        #     try:
-        #         G = np.asarray(chunk_data, dtype=np.float64)  # shape (M, n_samples)
-        #         # coeffs: (p+1, M) = proj_A (p+1 x n_samples) @ G.T (n_samples x M)
-        #         coeffs = proj_A @ G.T
-        #         # fitted: (n_samples, M) = cov_X (n_samples x p+1) @ coeffs (p+1 x M)
-        #         fitted = cov_X @ coeffs
-        #         G_resid = G - fitted.T  # back to (M, n_samples)
-        #         chunk_data = G_resid.astype(np.float32)
-        #     except Exception as e:
-        #         # fallback to original data on failure
-        #         print(f"Warning: failed to regress covariates from genotypes for this chunk: {e}", flush=True)
-        # geno.copy_(torch.from_numpy(chunk_data).float())
+ 
         mean, std, t_stats, beta_coeffs, se = calc_t(
             corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre
         )
