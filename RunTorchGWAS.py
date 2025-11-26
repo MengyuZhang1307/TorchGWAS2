@@ -58,6 +58,8 @@ class CaptureCStderr:
 
 def setup_logger(out_path):
     """Create a logger that prints to both file and console."""
+    if os.path.exists(out_path):
+        os.remove(out_path)
     log_file = out_path 
 
     logger = logging.getLogger("TGWAS")
@@ -149,9 +151,15 @@ def main():
     base_name = os.path.basename(args.out)
     log_file = os.path.join(dir_name, base_name + ".log") 
     logger = setup_logger(log_file)
-    runner = GEMRunner(confopt.get())
-    logger.info("Running null model fitting ...")
-    cxx_buffer = io.StringIO()
+    logger.info("Initializing GEMRunner...")
+
+    with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
+        runner = GEMRunner(confopt.get())
+
+    init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
+    if init_output:
+        logger.info("\n********** C++ Initialization Output **********\n" + init_output)
+        logger.info("Running null model fitting ...")
 
     with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
         runner.run_fit_nullmodel()
@@ -162,6 +170,7 @@ def main():
     else:
         logger.info("No C++ output captured from null model.")
 
+    cxx_buffer = io.StringIO()
     logger.info("Starting dosage streaming and GWAS...")
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt") 
     TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")

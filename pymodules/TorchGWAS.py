@@ -238,19 +238,12 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
             # proj_A = inv_XtX @ cov_X.T  # shape (p+1, n_samples)
             ########################-Move to GPU-########################
             cov_X = torch.from_numpy(cov_X_n).to(device).float()
-            print("cov_X device:", cov_X.device)
-
             # Compute XᵀX
             XtX = cov_X.T @ cov_X
-            print("XtX device:", XtX.device)
-
             # Invert XᵀX
             inv_XtX = torch.linalg.inv(XtX)
-            print("inv_XtX device:", inv_XtX.device)
-
             # Compute projection A
             proj_A = inv_XtX @ cov_X.T
-            print("proj_A device:", proj_A.device)
 
             # Inform what covariates are applied (if known)
             if applied_covs is None:
@@ -305,13 +298,10 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         if proj_A is not None and chunk_data is not None:
             try:
                 G = torch.from_numpy(chunk_data).float().to(device)  # shape (M, n_samples)
-                print("G device:", G.device)
                 coeffs = proj_A @ G.T
-                print("coeffs device:", coeffs.device)
                 fitted = cov_X @ coeffs
                 G_resid = G - fitted.T
                 geno.copy_(G_resid.float())
-                print("geno device:", geno.device)
 
             except Exception as e:
                 print(f"Warning: failed to regress covariates: {e}", flush=True)
