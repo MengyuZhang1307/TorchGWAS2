@@ -262,6 +262,7 @@ void NullModel::process_gmmat(const std::string kin_add,
 
     for (int t = 0; t < num_threads; ++t) 
     {
+        std::cout << "num_threads" << num_threads << "\n";
         int start_col = t * block_size;
         int end_col = std::min(start_col + block_size, pheno_columns);
 

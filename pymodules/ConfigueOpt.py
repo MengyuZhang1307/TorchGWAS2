@@ -32,3 +32,6 @@ class ConfOpt:
     @property
     def stream_snps(self):
         return self._opt.stream_snps
+    @property
+    def sampleid_name(self):
+        return self._opt.sampleid_header_name
