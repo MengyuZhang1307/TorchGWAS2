@@ -910,7 +910,7 @@ Fit GMMAT::fitglmm_ai(DensVec const& W)
         //if only the upper part of sm1 is stored, convert vec to eigen vec
         sigma = sigma + m_tau(i + ng) * curr_kin_spmat;//for(i in 1:q) Sigma <- Sigma + tau[i+ng]*kins[[i]]
     }
-  
+
     fit_to_return.sigma_i =  SparseInverse::inv_spamat(sigma);
     fit_to_return.sigma_ix = crossprod(fit_to_return.sigma_i, m_X);
     DensMat xsigma_ix = crossprod(m_X, fit_to_return.sigma_ix); 
@@ -932,7 +932,6 @@ Fit GMMAT::fitglmm_ai(DensVec const& W)
 
         // DensVec dv =  AI.fullPivLu().solve(score);
         // fit_to_return.dtau = std::make_optional(dv);
-
         auto lu_decomp = AI.fullPivLu();
         if (lu_decomp.isInvertible()) 
         {
@@ -941,9 +940,11 @@ Fit GMMAT::fitglmm_ai(DensVec const& W)
         } 
         else 
         {
-            std::cout << "The matrix is not invertible, solve operation failed." << std::endl;
             fit_to_return.dtau = std::nullopt;
-            exit(EXIT_FAILURE); 
+
+            throw std::runtime_error(
+                "The matrix is not invertible, solve operation failed."
+            );
         }
         return fit_to_return;
     } 
@@ -1001,7 +1002,6 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
     if(fixtau_0_counts > 0)
     {
         auto tau_value = calc_variance(m_Y) / (kins_size + ng);
-
         for(int idx : m_idxtau)
         {
              m_tau(idx) = tau_value;//m_fixtau(0) is 1 for binomia so idx!=0 m_tau(0) will be 1 always
@@ -1377,7 +1377,6 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     
     std::ext::V_double new_y;
     std::ext::V_string nomissing_y;
-
     //Remove lines where had missing data in pheno file
     for(auto const& idx : pheno_valid_indices)
     {
@@ -1421,6 +1420,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     // std::ext::V_double pheno_data = conv_dv2stdVd(m_y);
     m_X = create_covdata(m_vkins_sp[0].cov.m_data_frame.copy_by_hdrs(cov_selected_hdrs));
     std::ext::V_double cov_data = conv_dm2stdV(m_X); 
+
     m_n_sel_col = cov_selected_hdrs.size();
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
                  &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, verbose); 
@@ -1480,6 +1480,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
 
         spi_mat.setFromTriplets(triplets.begin(), triplets.end());
         spi_mat.makeCompressed();
+
         if(!m_vkins_sp[0].kin.m_null_kin)
         {
             m_vkins_sp[1].set_spmat(spi_mat);

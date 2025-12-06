@@ -169,7 +169,8 @@ def main():
         logger.info("\n****************************** C++ Null Model Output ******************************\n" + merged)
     else:
         logger.info("No C++ output captured from null model.")
-
+    
+    
     cxx_buffer = io.StringIO()
     logger.info("Starting dosage streaming and GWAS...")
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt") 

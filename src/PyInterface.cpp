@@ -7,6 +7,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>     
 
+
 namespace py = pybind11;
 // Lightweight Python-visible wrapper around the internal queue
 struct DosageStream {
@@ -59,23 +60,18 @@ PYBIND11_MODULE(Mygen, m)
         py::class_<GEMRunner>(m, "GEMRunner")
             .def(py::init<const GEMOptions&>())  // constructor
             .def_readonly("opt", &GEMRunner::opt)
-            .def("run_fit_nullmodel", &GEMRunner::run_fit_nullmodel)
-            
-            // Get C2 values from null model fitting
-            // .def("get_c2_values", [](const GEMRunner& self) {
-            //     if (self.c2_values.empty()) {
-            //         throw std::runtime_error("No C2 values available. Make sure run_fit_nullmodel() was called with kinship data.");
-            //     }
-            //     size_t n = self.c2_values.size();
-            //     py::array_t<double> result = py::array_t<double>(n);
-            //     auto buf = result.request();
-            //     double* ptr = static_cast<double*>(buf.ptr);
-            //     for (size_t i = 0; i < n; ++i) {
-            //         ptr[i] = self.c2_values[i];
-            //     }
-            //     return result;
-            // })
-            // Start background BGEN streaming; returns a queue you can iterate over in Python.
+            // .def("run_fit_nullmodel", &GEMRunner::run_fit_nullmodel)
+            .def("run_fit_nullmodel",
+                [](GEMRunner &self) {
+                    try {
+                        return self.run_fit_nullmodel();
+                    } catch (const std::exception &e) {
+                        // convert C++ std::exception → Python ValueError
+                        throw py::value_error(e.what());
+                    }
+                }
+            )
+         
             .def("start_dosage_stream",
                 [](GEMRunner& self, std::size_t queue_capacity, int snps_per_chunk){
                     auto q = std::make_shared<BoundedChunkQueue>(queue_capacity);
@@ -149,4 +145,3 @@ namespace {
         );
     }
 }
-

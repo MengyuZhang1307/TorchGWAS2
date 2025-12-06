@@ -133,65 +133,128 @@ void NullModel::process_phenotype_file(Cov& cov)
         }
 }
 
+
 void NullModel::filter_pheno_by_cov(Cov const& cov)
 {
-    
     if (opt.verbose)
     {
         fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
     }
-    const auto& kept_idx = cov.m_data_frame.m_data.at(cov.m_sam_id_hdr);
-    const int num_traits = pheno_column_names.size() - 2;
-    std::unordered_map<std::string, int> ph_id_map;
-    ph_id_map.reserve(kept_idx.size());
-    for (int i = 0; i < pheno_raw.size(); ++i)
-        ph_id_map[pheno_raw[i][hdr_id_indx]] = i;
-    
-  
+
+    // These are the ORIGINAL row indices (in pheno_raw / original cov)
+    // kept after matching with BGEN and filtering cov missingness.
+    const std::ext::V_int& keep_rows = cov.m_data_frame.m_valid_indices;
+
+    const int num_traits = pheno_column_names.size() - 2;  // assuming first two are FID/IID
+
     phenotype_data.assign(num_traits, {});
     pheno_valid_indices.assign(num_traits, {});
 
-    for (int t = 0; t < num_traits; ++t) 
+    for (int t = 0; t < num_traits; ++t)
     {
-        phenotype_data[t].reserve(kept_idx.size());       // each trait will have kept.size() rows
-        pheno_valid_indices[t].reserve(kept_idx.size()); 
+        phenotype_data[t].reserve(keep_rows.size());
+        pheno_valid_indices[t].reserve(keep_rows.size());
     }
 
-    for (auto idx : kept_idx) 
+    for (int row_idx : keep_rows)
     {
-        auto it = ph_id_map.find(idx);
-        if (it != ph_id_map.end())
+        if (row_idx < 0 || row_idx >= static_cast<int>(pheno_raw.size()))
         {
-            const auto& row = pheno_raw[it->second];  // search id in phenotype line
-            
-            for (int t = 0; t < num_traits; ++t) 
-            {
-                const std::string& v = row[t + 2]; // traits start at col 2
+            std::cerr << "ERROR: keep_rows index out of range for phenotype data: " 
+                      << row_idx << "\n";
+            exit(EXIT_FAILURE);
+        }
 
-                if (v.empty() || v == opt.missing_key) 
-                {
-                    // store missing placeholder
-                    phenotype_data[t].push_back(opt.missing_key);
-                } 
-                else 
-                {
-                    phenotype_data[t].push_back(v);
-                    // record index of valid observation 
-                    pheno_valid_indices[t].push_back(phenotype_data[t].size() - 1); 
-                }
+        const auto& row = pheno_raw[row_idx];  // same ordering as original cov
+
+        for (int t = 0; t < num_traits; ++t)
+        {
+            const std::string& v = row[t + 2]; // traits start at col 2
+
+            if (v.empty() || v == opt.missing_key)
+            {
+                phenotype_data[t].push_back(opt.missing_key);
+            }
+            else
+            {
+                phenotype_data[t].push_back(v);
+                pheno_valid_indices[t].push_back(phenotype_data[t].size() - 1);
             }
         }
     }
-    
+
     const size_t pheno_rows_after = phenotype_data.empty() ? 0 : phenotype_data[0].size();
     if (opt.verbose)
     {
         fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
         std::cout << "****************************************************************************\n";
     }
+
     pheno_raw.clear();
-    pheno_raw.shrink_to_fit();//free the unused memory
+    pheno_raw.shrink_to_fit(); // free memory
 }
+
+
+
+// void NullModel::filter_pheno_by_cov(Cov const& cov)
+// {
+    
+//     if (opt.verbose)
+//     {
+//         fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
+//     }
+//     const auto& kept_idx = cov.m_data_frame.m_data.at(cov.m_sam_id_hdr);
+//     const int num_traits = pheno_column_names.size() - 2;
+//     std::unordered_map<std::string, int> ph_id_map;
+//     ph_id_map.reserve(kept_idx.size());
+//     for (int i = 0; i < pheno_raw.size(); ++i)
+//         ph_id_map[pheno_raw[i][hdr_id_indx]] = i;
+    
+  
+//     phenotype_data.assign(num_traits, {});
+//     pheno_valid_indices.assign(num_traits, {});
+
+//     for (int t = 0; t < num_traits; ++t) 
+//     {
+//         phenotype_data[t].reserve(kept_idx.size());       // each trait will have kept.size() rows
+//         pheno_valid_indices[t].reserve(kept_idx.size()); 
+//     }
+
+//     for (auto idx : kept_idx) 
+//     {
+//         auto it = ph_id_map.find(idx);
+//         if (it != ph_id_map.end())
+//         {
+//             const auto& row = pheno_raw[it->second];  // search id in phenotype line
+            
+//             for (int t = 0; t < num_traits; ++t) 
+//             {
+//                 const std::string& v = row[t + 2]; // traits start at col 2
+
+//                 if (v.empty() || v == opt.missing_key) 
+//                 {
+//                     // store missing placeholder
+//                     phenotype_data[t].push_back(opt.missing_key);
+//                 } 
+//                 else 
+//                 {
+//                     phenotype_data[t].push_back(v);
+//                     // record index of valid observation 
+//                     pheno_valid_indices[t].push_back(phenotype_data[t].size() - 1); 
+//                 }
+//             }
+//         }
+//     }
+    
+//     const size_t pheno_rows_after = phenotype_data.empty() ? 0 : phenotype_data[0].size();
+//     if (opt.verbose)
+//     {
+//         fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
+//         std::cout << "****************************************************************************\n";
+//     }
+//     pheno_raw.clear();
+//     pheno_raw.shrink_to_fit();//free the unused memory
+// }
 
 
 Cov NullModel::setup_cov_pheno(std::string const& cov_add,

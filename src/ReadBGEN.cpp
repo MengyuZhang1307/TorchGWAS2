@@ -625,6 +625,7 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
             if (covmap.find(strtmp) != covmap.end()) 
             {
                 auto& tmp_valvecs = covmap[strtmp]; 
+                bool ID_added = false;
 
                 for (const auto& tmp_valvec : tmp_valvecs) {
                     // Check for missing covariate values in the current vector
@@ -636,8 +637,14 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                         {
                             sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol + 1) + c + 1]);
                         }
-                        sampleID.push_back(strtmp);
-                        k++;
+                        // sampleID.push_back(strtmp);
+                        // k++;
+                         if(!ID_added)
+                        {   
+                            sampleID.push_back(strtmp);
+                            k++;
+                            ID_added = true;
+                        }
                     }
                 }
             } 
@@ -647,6 +654,7 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                 genoUnMatchID.insert(m);
             }
         } 
+
         fIDMat.close();
     }
 
@@ -695,6 +703,7 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
             if (covmap.find(strtmp) != covmap.end()) 
             {
                 auto& tmp_valvecs = covmap[strtmp]; 
+                bool ID_added = false;
 
                 for (const auto& tmp_valvec : tmp_valvecs) 
                 {
@@ -707,8 +716,12 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                         {
                             sscanf(tmp_valvec[c].c_str(), "%lf", &new_covdata_orig[k * (numSelCol + 1) + c + 1]);
                         }
-                        sampleID.push_back(strtmp);
-                        k++;
+                        if(!ID_added)
+                        {   
+                            sampleID.push_back(strtmp);
+                            k++;
+                            ID_added = true;
+                        }
                     }
                 }
             }
