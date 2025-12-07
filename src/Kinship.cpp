@@ -17,8 +17,7 @@ void Kinship::read_file(std::string_view path, char delim)
 
     if(m_data_frame.m_headers.size() > 3)
     {
-        fmt::print("Erro in kinship files, the number of the columns in {} exceeds 3\n",
-        path);
+        std::cout << "Erro in kinship files, the number of the columns in " << path << " exceeds 3\n";
         exit(EXIT_FAILURE);
     }
     add_dquot();

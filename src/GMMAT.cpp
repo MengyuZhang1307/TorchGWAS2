@@ -204,7 +204,7 @@ double calc_variance(DensVec const& dv)
     int size = dv.size();
     if(size < 2)
     {
-            fmt::print("Warning: Variance calculation requires at least two elements.\n");
+            std::cout << "Warning: Variance calculation requires at least two elements.\n";
             return variance;
     }
 
@@ -566,7 +566,76 @@ bool check_convergence(const DensVec& alpha, const DensVec& alpha0,
     return false; // Not converged yet
 }
 
+/**
+    * @brief A function to remove collinear columns from covariate matrix using QR decomposition.
+ */
+void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
+{
+    std::cout << "Checking for collinear columns in the covariate matrix...\n";
+    const int nrows = m_X.rows();
+    const int ncols = m_X.cols();
 
+    std::ext::V_int dropped_cols;
+
+    // QR decomposition
+    Eigen::HouseholderQR<Mat> qr(m_X);
+    Mat R = qr.matrixQR();  // packed; upper triangle is R
+    // Keep only upper triangle
+    DensVec diagR = R.diagonal().cwiseAbs();
+
+    // Collinearity threshold: maxdiag * sqrt(eps)
+    const double sqrtEps = std::sqrt(std::numeric_limits<double>::epsilon());
+    const double maxdiag = diagR.size() > 0 ? diagR.maxCoeff() : 0.0;
+    const double cutoff  = maxdiag * sqrtEps;
+
+    // Decide which columns to drop
+    for (int j = 0; j < ncols; ++j) 
+    {
+        if (diagR(j) < cutoff) {
+            dropped_cols.push_back(j);
+        }
+    }
+
+    if (dropped_cols.empty()) 
+    {
+        // Nothing to drop; m_X stays as is
+        std::cout << "No collinear columns detected in the covariate matrix.\n";
+        std::cout << "****************************************************************************\n";
+        return;
+    }
+
+    //  Build a mask of columns to keep
+    std::cout << "Dropping column(s): ";
+    for (int idx : dropped_cols) 
+    {
+        std::cout << cov_selected_hdrs[idx-1] << " ";
+    }
+
+    std::vector<char> drop_flag(ncols, 0);
+    for (int idx : dropped_cols) 
+    {
+        drop_flag[idx] = 1;
+    }
+
+   std::ext::V_int keep_indices;
+    keep_indices.reserve(ncols - static_cast<int>(dropped_cols.size()));
+    for (int j = 0; j < ncols; ++j) 
+    {
+        if (!drop_flag[j]) 
+        {
+            keep_indices.push_back(j);
+        }
+    }
+
+    // Build new matrix with only non-collinear columns
+    Mat X_new(nrows, static_cast<int>(keep_indices.size()));
+    for (int k = 0; k < static_cast<int>(keep_indices.size()); ++k) 
+    {
+        X_new.col(k) = m_X.col(keep_indices[k]);
+    }
+    m_X.swap(X_new);
+    std::cout << "****************************************************************************\n";
+}
 
 
 // Find ids for each group, group male=0 and female =1 --> m_group_idx[0]={1,3,5}
@@ -1267,7 +1336,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
     Glmmkin glmmkin;
     if(method_optim == "Brent")
     {
-        fmt::println("Error: we do not support Brent");
+        std::cout << "Error: we do not support Brent\n";
         exit(EXIT_FAILURE);
     }
     
@@ -1298,7 +1367,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
 
         while(fixtau_new != fixtau_old || (fixrho_new.size() > 0 && fixrho_new != fixrho_old))
         {
-            fmt::print(stderr, "Warning: Variance estimate on the boundary of the parameter space observed, refitting model...\n");
+            std::cerr << "Warning: Variance estimate on the boundary of the parameter space observed, refitting model...\n";
             fixtau_old = fixtau_new;
 
             if(m_covariance_idx.size() > 0)
@@ -1316,28 +1385,28 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
         {
             if(ng != 1)
             {
-                fmt::print(stderr, "Error: Average Information REML not converged, cannot refit heteroscedastic linear mixed model using Brent or Nelder-Mead methods.\n");
+                std::cerr << "Error: Average Information REML not converged, cannot refit heteroscedastic linear mixed model using Brent or Nelder-Mead methods.\n";
                 exit(EXIT_FAILURE);
             }
 
             if(m_rand_slope.size() > 0)
             {
-                fmt::print(stderr, "Error: Average Information REML not converged, cannot refit random slope model for longitudinal data using Brent or Nelder-Mead methods.\n");
+                std::cerr << "Error: Average Information REML not converged, cannot refit random slope model for longitudinal data using Brent or Nelder-Mead methods.\n";
                 exit(EXIT_FAILURE);
             }
 
             if(kins_size == 1)
             {
-                fmt::print(stderr, "Average Information REML not converged, refitting model using Brent method...\n");
-                fmt::print(stderr, "Brent is not available for the time being, stay in touch for updates ;)\n");
+                std::cerr << "Average Information REML not converged, refitting model using Brent method...\n";
+                std::cerr << "Brent is not available for the time being, stay in touch for updates ;)\n";
                 exit(EXIT_FAILURE);
             }
         }
     }
     else
     {
-        fmt::print(stderr, "The optimization method is not supported for the time being\n");
-        fmt::print(stderr, "Stay in touch for any updates\n");
+        std::cerr << "The optimization method is not supported for the time being\n";
+        std::cerr << "Stay in touch for any updates\n";
         exit(EXIT_FAILURE);
     }   
     return glmmkin;
@@ -1390,13 +1459,13 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
 
     if(it == v_valid_methods.end())
     {
-        fmt::print(stderr, "Error: {} is not in GMMAT valid methods (REML, ML)\n", method);
+        std::cerr << "Error: " << method << " is not in GMMAT valid methods (REML, ML)\n";
         exit(EXIT_FAILURE);
     }
 
     if(method ==  "ML" && method_optim == "AI")
     {
-        fmt::print(stderr, "Error: {} is not available for {}\n", method, method_optim);
+        std::cerr << "Error: " << method << " is not available for " << method_optim << "\n";
         exit(EXIT_FAILURE);
     }
 
@@ -1404,7 +1473,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     {
         if(method_optim != "AI")
         {
-            fmt::print(stderr, "Error: random slope for longitudinal data is currently only implemented for method.optim \"AI\".");
+            std::cerr << "Error: random slope for longitudinal data is currently only implemented for method.optim \"AI\".";
             exit(EXIT_FAILURE);
         }
         std::ext::V_string slope_temp = m_vkins_sp[0].cov.m_data_frame.get_header(rand_slope_hdr);
@@ -1419,6 +1488,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     GEMFit gf;
     // std::ext::V_double pheno_data = conv_dv2stdVd(m_y);
     m_X = create_covdata(m_vkins_sp[0].cov.m_data_frame.copy_by_hdrs(cov_selected_hdrs));
+    remove_collinear_columns(m_X, cov_selected_hdrs);
     std::ext::V_double cov_data = conv_dm2stdV(m_X); 
 
     m_n_sel_col = cov_selected_hdrs.size();
@@ -1492,7 +1562,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     }
     else if(m_vkins_sp[0].kin.m_null_kin && rand_slope_hdr.size() > 0)
     {
-        fmt::print(stderr, "\"random slope\" ignored for cross-sectional data from unrelated individuals...");
+        std::cerr << "\"random slope\" ignored for cross-sectional data from unrelated individuals...\n";
         exit(EXIT_FAILURE);
     }
     std::ext::V_int group_id;

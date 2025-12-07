@@ -28,7 +28,7 @@ class Bgen
         std::ext::V_string sampleID;
         //AllsampleIDs before matching
         std::ext::V_string sampleID_all;
-        std::ext::V_double  new_covdata;
+        // std::ext::V_double  new_covdata;//used for update collinear covariates
         std::vector<long int> include_idx;
         std::vector <long int> variant_pos;
         std::vector<unsigned int> includeVariantIndex;

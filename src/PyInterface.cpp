@@ -10,13 +10,15 @@
 
 namespace py = pybind11;
 // Lightweight Python-visible wrapper around the internal queue
-struct DosageStream {
+struct DosageStream 
+{
     std::shared_ptr<BoundedChunkQueue> q;
     explicit DosageStream(std::shared_ptr<BoundedChunkQueue> queue) : q(std::move(queue)) {}
 };
 
 // Forward declaration of helper used below
-namespace {
+namespace 
+{
     inline py::array_t<float> chunk_to_numpy(const Chunk& c);
 }
 
@@ -129,7 +131,8 @@ PYBIND11_MODULE(Mygen, m)
         });
 }
 // Local helper to convert a Chunk to a zero-copy NumPy array with correct lifetime
-namespace {
+namespace 
+{
     inline py::array_t<float> chunk_to_numpy(const Chunk& c) 
     {
         float* ptr = c.data.get();

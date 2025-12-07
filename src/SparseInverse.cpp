@@ -26,11 +26,11 @@ SparseInverse::SparseInverse(Cov &cov_copy, const std::string kin_add, const cha
     }
     if (remove_missing) 
     {
-        // fmt::println("Number of observation in covariate file before matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
+        // std::cout << "Number of observation in covariate file before matching IDs with phenotype is: " << cov.m_data_frame.n_rows() << "\n";
         //Remove lines with missing value from cov data based on phenotype missing data
         cov.m_data_frame.remove_missing(cov.m_v_hdrs, cov.m_pheno_valid_indices);
-        // fmt::println("Number of observation in covariate file after matching IDs with phenotype is: {}", cov.m_data_frame.n_rows());
-        // fmt::println("****************************************************************************");
+        // std::cout << "Number of observation in covariate file after matching IDs with phenotype is: " << cov.m_data_frame.n_rows() << "\n";
+        // std::cout << "****************************************************************************\n";
     }
 
     set_spmat();

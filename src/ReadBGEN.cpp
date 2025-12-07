@@ -639,7 +639,7 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
                         }
                         // sampleID.push_back(strtmp);
                         // k++;
-                         if(!ID_added)
+                        if(!ID_added)
                         {   
                             sampleID.push_back(strtmp);
                             k++;
@@ -846,8 +846,8 @@ void Bgen::process_bgen_sample_block(const char samplefile[300], bool useSample,
     // } 
     // else 
     // {
-            new_covdata.resize(samSize * (numSelCol+1));
-            new_covdata = new_covdata_orig;
+            // new_covdata.resize(samSize * (numSelCol+1));
+            // new_covdata = new_covdata_orig;
     // }
 
 }

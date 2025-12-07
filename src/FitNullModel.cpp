@@ -75,14 +75,13 @@ void NullModel::process_phenotype_file(Cov& cov)
     }
     
     int num_columns = pheno_column_names.size();
-    std::cout << "****************************************************************************\n";
     std::cout << "Total columns in phenotype file: " << num_columns << "\n"; 
     std::cout << "****************************************************************************\n";
     
     // The first two cols are FID and IID
     if(num_columns < 3)
     {
-        fmt::println(stderr, "Warning: number of columns in phenotype file at least should be 3. check row: {}", row_indx);
+        std::cerr << "Warning: number of columns in phenotype file at least should be 3. check row: " << row_indx << "\n";
         exit(EXIT_FAILURE);
     }
     
@@ -138,7 +137,7 @@ void NullModel::filter_pheno_by_cov(Cov const& cov)
 {
     if (opt.verbose)
     {
-        fmt::println("Number of observation in phenotype file before matching rows with covariate file: {}", pheno_raw.size());
+        std::cout << "Number of observation in phenotype file before matching rows with covariate file: " << pheno_raw.size() << "\n";
     }
 
     // These are the ORIGINAL row indices (in pheno_raw / original cov)
@@ -186,7 +185,7 @@ void NullModel::filter_pheno_by_cov(Cov const& cov)
     const size_t pheno_rows_after = phenotype_data.empty() ? 0 : phenotype_data[0].size();
     if (opt.verbose)
     {
-        fmt::println("Number of observation in phenotype file after matching rows with covariate file: {}", pheno_rows_after);
+        std::cout << "Number of observation in phenotype file after matching rows with covariate file: " << pheno_rows_after << "\n";
         std::cout << "****************************************************************************\n";
     }
 
@@ -278,14 +277,14 @@ Cov NullModel::setup_cov_pheno(std::string const& cov_add,
     //Match genofile sample IDs
     if (opt.verbose)
     {
-        fmt::println("Number of observation in covariate file before matching IDs with genotype IDS is: {}", cov.m_data_frame.n_rows());
+        std::cout << "Number of observation in covariate file before matching IDs with genotype IDS is: " << cov.m_data_frame.n_rows() << "\n";
     }
     //Remove lines with missing data from cov data based on missing value in cov and missing sampleID in genotype file
     cov.m_data_frame.match_genoids(cov.m_sam_id_hdr, cov.m_v_hdrs);
     if (opt.verbose)
     {   
-        fmt::println("Number of observation in covariate file after matching IDs with genotype IDs is: {}", cov.m_data_frame.n_rows());
-        fmt::println("****************************************************************************");
+        std::cout << "Number of observation in covariate file after matching IDs with genotype IDs is: " << cov.m_data_frame.n_rows() << "\n";
+        std::cout << "****************************************************************************\n";
     }
         filter_pheno_by_cov(cov); //Remove missing cov data from pheno file
     return cov;
