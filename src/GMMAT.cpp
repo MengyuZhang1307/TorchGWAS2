@@ -1273,7 +1273,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
     if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))//For duplicated IDs
     {
         SpaMat kin = m_vkins_sp[0].get_uniqkin();
-        // double kin_diag = kin.diagonal().sum();
+        double kin_diag = kin.diagonal().sum();
         std::ext::V_string id_include = m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr);
         SpaMat J;
         fill_J(id_include, J);
@@ -1314,7 +1314,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
         //pad scaled residuals to the size of non missing kinship
         size_t scaled_res_size = glmmkin.scaled_residuals.size();
 
-        if (spm_nomiss_dim > scaled_res_size) 
+        if (spm_nomiss_dim > scaled_res_size) //Resize to the size of non-missing kinship
         {
             glmmkin.scaled_residuals.conservativeResize(spm_nomiss_dim);
             glmmkin.scaled_residuals.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
@@ -1440,8 +1440,11 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         SparseInverse sp(cov_copy, kin_add, kin_delim, //define scop to free kinship space
             kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
             pheno_valid_indices, false); //sp without removing missing pheno value
-        spm_diag_nomiss = sp.get_spmat().diagonal().sum();
-        spm_nomiss_dim = sp.get_spmat().cols();
+        SpaMat kin_uniqueIDs = sp.get_uniqkin();
+        spm_diag_nomiss = kin_uniqueIDs.diagonal().sum();
+        spm_nomiss_dim = kin_uniqueIDs.cols();
+        // spm_diag_nomiss = sp.get_spmat().diagonal().sum();
+        // spm_nomiss_dim = sp.get_spmat().cols();
     }
     
     std::ext::V_double new_y;
