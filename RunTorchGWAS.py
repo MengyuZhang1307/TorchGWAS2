@@ -56,30 +56,58 @@ class CaptureCStderr:
         self.output = self.tmp.read().decode()
         self.tmp.close()
 
-def setup_logger(out_path):
-    """Create a logger that prints to both file and console."""
-    if os.path.exists(out_path):
-        os.remove(out_path)
-    log_file = out_path 
+# def setup_logger(out_path):
+#     """Create a logger that prints to both file and console."""
+#     if os.path.exists(out_path):
+#         os.remove(out_path)
+#     log_file = out_path 
 
+#     logger = logging.getLogger("TGWAS")
+#     logger.setLevel(logging.INFO)
+
+#     fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s",
+#                             datefmt="%Y-%m-%d %H:%M:%S")
+
+#     # File handler
+#     fh = logging.FileHandler(log_file, mode="a")
+#     fh.setFormatter(fmt)
+#     logger.addHandler(fh)
+
+#     # Console handler
+#     ch = logging.StreamHandler()
+#     ch.setFormatter(fmt)
+#     logger.addHandler(ch)
+
+#     return logger
+
+def setup_logger(out_path, truncate=False):
+    """
+    Create a logger that prints to both file and console.
+    If truncate=True, overwrite the log file.
+    If truncate=False, append to the existing file.
+    """
     logger = logging.getLogger("TGWAS")
     logger.setLevel(logging.INFO)
 
-    fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s",
-                            datefmt="%Y-%m-%d %H:%M:%S")
+    # IMPORTANT: avoid duplicate handlers if called multiple times
+    if logger.handlers:
+        logger.handlers.clear()
 
-    # File handler
-    fh = logging.FileHandler(log_file, mode="a")
+    fmt = logging.Formatter(
+        "[%(asctime)s] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    mode = "w" if truncate else "a"
+    fh = logging.FileHandler(out_path, mode=mode)
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-    # Console handler
     ch = logging.StreamHandler()
     ch.setFormatter(fmt)
     logger.addHandler(ch)
 
     return logger
-
 
 def normalize_delim(s):
     # Convert to single-character delimiter that C++ expects
@@ -93,11 +121,11 @@ def normalize_delim(s):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run TorchGWAS using GEM2 and Torch backend.")
-    parser.add_argument("--pheno-file", type=str, required=True, help="Phenotype file path")
-    parser.add_argument("--cov-file", type=str, required=True, help="Covariate file path")
-    parser.add_argument("--bgen", type=str, required=True, help="genotype file path")
-    parser.add_argument("--sample", type=str, required=True, help="BGEN Sample file path (optional)")
-    parser.add_argument("--kin-file", type=str, default="", help="Kinship file path (optional)")
+    parser.add_argument("--pheno-file", type=str, help="Phenotype file path (required for step1)")
+    parser.add_argument("--cov-file", type=str, help="Covariate file path (required for step1 and step2)")
+    parser.add_argument("--bgen", type=str, help="genotype file path (required for step1 and step2)")
+    parser.add_argument("--sample", type=str, help="BGEN Sample file path (optional, required for step1 and step2 if BGEN)")
+    parser.add_argument("--kin-file", type=str, default="", help="Kinship file path (optional, required for step1 and step2 if using kinship)")
     parser.add_argument("--kin-diag", type=float, default=1.0, help="Diagonal value of " \
                         "kinship matrix that not accounting for inbreeding (Default: 1.0)")
     parser.add_argument("--pheno-delim", type=str, default=",", help="Phenotype file delimiter (default: comma)")
@@ -117,13 +145,33 @@ def parse_args():
     parser.add_argument("--out", type=str, default="out.txt", help="Output file name")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Computation device (default: cuda)")
     parser.add_argument("--verbose", action="store_true", help="Print null model(default: False)")
-    parser.add_argument("--convert", action="store_true", help="Convert binary to text file (default: True)")
+    # parser.add_argument("--convert", action="store_true", help="Convert binary to text file (default: True)")
+    parser.add_argument("--step", choices=["step1", "step2", "step3"], default="step1",
+                help=(
+                    "Pipeline step to run:\n"
+                    "step1 = Fit the null model generate correction factors (write intermediate_*.txt)\n"
+                    "step2 = TGWAS (write TGWAS_*.parquet)\n"
+                    "step3 = Convert TGWAS_*.parquet to .txt\n"
+                ))
+    parser.add_argument("--correction-add", dest="correction_add", type=str, default="", help="Path to intermediate file produced by step1 (used in step2).")
+    parser.add_argument("--parquet", type=str, default="", help="Input TGWAS parquet file for step3.",)
     return parser.parse_args()
 
-def main():
-    start_time = time.time()
-    args = parse_args()
-    
+def build_logger_and_paths(args):
+    """Only handles logger + dir/base names based on --out."""
+    dir_name = os.path.dirname(args.out) or "."
+    base_name = os.path.basename(args.out)
+    log_file = os.path.join(dir_name, base_name + ".log")
+
+    # For step1 we truncate; for step2/3 we append to the same log
+    truncate = (args.step == "step1")
+
+    logger = setup_logger(log_file, truncate=truncate)
+    return logger, dir_name, base_name
+
+
+def build_conf_step1(args):
+    """Config for step1: needs phenotype + covariates, genotype files, kin."""
     confopt = ConfOpt(
         pheno_add=args.pheno_file,
         pheno_delim=normalize_delim(args.pheno_delim),
@@ -135,7 +183,7 @@ def main():
         do_filters=bool(args.include_snp_file),
         includeVariantFile=args.include_snp_file,
         stream_snps=args.stream_snps,
-        sampleid_header_name= args.sampleid_name,
+        sampleid_header_name=args.sampleid_name,
         covariates=args.covar_names,
         random_slope_header_name=args.random_slope_name,
         missing_key=args.missing_value,
@@ -143,166 +191,242 @@ def main():
         kin_delim=normalize_delim(args.kin_delim),
         kin_diag=args.kin_diag,
         threads=args.threads,
-        # num_chunks=args.num_chunks,
         outfile=args.out,
-        verbose = args.verbose
+        verbose=args.verbose,
     )
-    dir_name = os.path.dirname(args.out)
-    base_name = os.path.basename(args.out)
-    log_file = os.path.join(dir_name, base_name + ".log") 
-    logger = setup_logger(log_file)
-    logger.info("Initializing GEMRunner...")
+    return confopt
 
+def build_conf_step2(args):
+    """Config for step2: NO phenotype, but covariates, genotype files, kin."""
+    confopt = ConfOpt(
+        cov_add=args.cov_file,
+        cov_delim=normalize_delim(args.cov_delim),
+        geno_add=args.bgen,
+        sample_add=args.sample,
+        use_sample_file=bool(args.sample),
+        do_filters=bool(args.include_snp_file),
+        includeVariantFile=args.include_snp_file,
+        stream_snps=args.stream_snps,
+        sampleid_header_name=args.sampleid_name,
+        covariates=args.covar_names,
+        random_slope_header_name=args.random_slope_name,
+        missing_key=args.missing_value,
+        kin_add=args.kin_file,
+        kin_delim=normalize_delim(args.kin_delim),
+        kin_diag=args.kin_diag,
+        threads=args.threads,
+        outfile=args.out,
+        verbose=args.verbose,
+    )
+    return confopt
+
+def run_step1(confopt, logger, dir_name, base_name, args):
+    """
+    STEP 1:
+      - GEMRunner init
+      - run_fit_nullmodel
+      - log intermediate + TGWAS filenames
+    """
+    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
+    # TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
+
+    logger.info("STEP 1: Initializing GEMRunner and fitting null model...")
+
+    # 1) C++ init
     with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
         runner = GEMRunner(confopt.get())
 
     init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
     if init_output:
         logger.info("\n********** C++ Initialization Output **********\n" + init_output)
-        logger.info("Running null model fitting ...")
 
+    # 2) Null model
+    logger.info("Running null model fitting ...")
     with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
         runner.run_fit_nullmodel()
 
     merged = (cap_out.output + "\n" + cap_err.output).strip()
     if merged:
-        logger.info("\n****************************** C++ Null Model Output ******************************\n" + merged)
+        logger.info(
+            "\n****************************** C++ Null Model Output ******************************\n"
+            + merged
+        )
     else:
         logger.info("No C++ output captured from null model.")
-    
-    
-    cxx_buffer = io.StringIO()
-    logger.info("Starting dosage streaming and GWAS...")
-    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt") 
+
+    logger.info(f"Intermediate file (correction) path: {intermediate_file}")
+    # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
+    logger.info(f"Run step2 with: --correction-add {intermediate_file}")
+
+ 
+def run_step2(confopt, logger, dir_name, base_name, args):
+    """
+    STEP 2:
+      - GEMRunner init again
+      - run_gwas(runner, correction, TGWAS_file, ...)
+    """
+    if not args.correction_add:
+        raise SystemExit("STEP 2 requires --correction <intermediate_file> (output of step1).")
+
+    intermediate_file = args.correction_add                     # this *is* the correction file
     TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
-    
+
+    logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
+    logger.info(f"Using correction (intermediate) file: {intermediate_file}")
+    logger.info(f"TGWAS parquet output: {TGWAS_file}")
+
+    with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
+        runner = GEMRunner(confopt.get())
+
+    init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
+    if init_output:
+        logger.info(
+            "\n********** C++ Initialization Output (Step 2) **********\n"
+            + init_output
+        )
+
+    cxx_buffer = io.StringIO()
+    logger.info("Starting GWAS/TGWAS with run_gwas...")
+
     with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-        run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
+        run_gwas(
+            runner,
+            intermediate_file,               # correction file
+            TGWAS_file,
+            snps_per_chunk=args.stream_snps,
+            device=args.device,
+        )
+
     captured_output = cxx_buffer.getvalue().strip()
     if captured_output:
-        logger.info("\n****************************** TGWAS Output ******************************\n" + captured_output)
-    cxx_buffer.seek(0)
-    cxx_buffer.truncate(0)
-    if args.convert:
-        output_file= os.path.join(dir_name, base_name + ".txt") 
-        with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-            parquet_to_text_duckdb(TGWAS_file, output_file)
-        captured_output_conversion = cxx_buffer.getvalue().strip()
-        if captured_output_conversion:
-            logger.info("\n******************************Conversion of Output Binary to Text******************************\n" + captured_output_conversion)
+        logger.info(
+            "\n****************************** TGWAS Output ******************************\n"
+            + captured_output)
+
+def run_step3(logger, dir_name, base_name, args):
+    """
+    STEP 3:
+        - Convert TGWAS_<base_name>.parquet -> <base_name>.txt
+        - TGWAS_file (input parquet)
+        - output_file (text)
+        - logger
+    """
+    TGWAS_file = args.parquet
+    output_file = os.path.join(dir_name, base_name + ".txt")
+
+    cxx_buffer = io.StringIO()
+    logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
+
+    with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+        parquet_to_text_duckdb(TGWAS_file, output_file)
+
+    captured_output_conversion = cxx_buffer.getvalue().strip()
+    if captured_output_conversion:
+        logger.info(
+            "\n****************************** Conversion of Output Binary to Text ******************************\n"
+            + captured_output_conversion)
+
+def main():
+    start_time = time.time()
+    args = parse_args()
+
+    # Step-specific requirements
+    if args.step == "step1" and not args.pheno_file:
+        raise SystemExit("STEP 1 requires --pheno-file.")
+
+    logger, dir_name, base_name = build_logger_and_paths(args)
+
+    if args.step == "step1":
+        confopt = build_conf_step1(args)
+        run_step1(confopt, logger, dir_name, base_name, args)
+
+    elif args.step == "step2":
+        confopt = build_conf_step2(args)
+        run_step2(confopt, logger, dir_name, base_name, args)
+
+    elif args.step == "step3":
+        run_step3(logger, dir_name, base_name, args)
 
     end_time = time.time()
-    logger.info("\n TorchGWAS completed successfully.")
+    logger.info("\nTorchGWAS pipeline step completed successfully.")
     logger.info(f"Wall time: {(end_time - start_time):.2f} seconds")
+
 if __name__ == "__main__":
     main()
 
 
+# def main():
+#     start_time = time.time()
+#     args = parse_args()
+    
+#     confopt = ConfOpt(
+#         pheno_add=args.pheno_file,
+#         pheno_delim=normalize_delim(args.pheno_delim),
+#         cov_add=args.cov_file,
+#         cov_delim=normalize_delim(args.cov_delim),
+#         geno_add=args.bgen,
+#         sample_add=args.sample,
+#         use_sample_file=bool(args.sample),
+#         do_filters=bool(args.include_snp_file),
+#         includeVariantFile=args.include_snp_file,
+#         stream_snps=args.stream_snps,
+#         sampleid_header_name= args.sampleid_name,
+#         covariates=args.covar_names,
+#         random_slope_header_name=args.random_slope_name,
+#         missing_key=args.missing_value,
+#         kin_add=args.kin_file,
+#         kin_delim=normalize_delim(args.kin_delim),
+#         kin_diag=args.kin_diag,
+#         threads=args.threads,
+#         outfile=args.out,
+#         verbose = args.verbose
+#     )
+#     dir_name = os.path.dirname(args.out)
+#     base_name = os.path.basename(args.out)
+#     log_file = os.path.join(dir_name, base_name + ".log") 
+#     logger = setup_logger(log_file)
+#     logger.info("Initializing GEMRunner...")
 
-# start_time = time.time()
+#     with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
+#         runner = GEMRunner(confopt.get())
 
-# # opt = ConfOpt(pheno_add = "example/example.pheno-2id-repeated",
-# #             cov_add = "example/example.pheno",
-# #             pheno_delim = ',',
-# #             cov_delim = ',',
-# #             kin_add = "example/example.kinship",
-# #             kin_delim = ',',
-# #             kin_diag = 0.5,
-# #             geno_add = "example/example.bgen",
-# #             sample_add = "example/example.sample",
-# #             do_filters = False,
-# #             use_sample_file = True,
-# #             includeVariantFile = "",
-# #             stream_snps = 1,
-# #             sampleid_header_name = "sampleid",
-# #             random_slope_header_name = "",
-# #             covariates = ["cov3"],
-# #             exposures = ["cov1"],
-# #             interactions = [],
-# #             missing_key = "NA",
-# #             threads = 5, 
-# #             num_chunks = 5,
-# #             outfile = "outexample.txt")
+#     init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
+#     if init_output:
+#         logger.info("\n********** C++ Initialization Output **********\n" + init_output)
+#         logger.info("Running null model fitting ...")
 
-# # opt = ConfOpt(pheno_file = "example/example.pheno2-2id",
-# #             cov_file = "example/example.cov-2id",
-# #             delim_pheno = ',',
-# #             delim_cov = ',',
-# #             geno_file = "example/example.bgen",
-# #             sample_file = "example/example.sample",
-# #             do_filters = False,
-# #             use_sample_file = True,
-# #             includeVariantFile = "",
-# #             stream_snps = 1,
-# #             sampleid_header_name = "sampleid",
-# #             random_slope_header_name = "",
-# #             covariates = ["cov3"],
-# #             exposures = ["cov1"],
-# #             interactions = [],
-# #             missing_key = "NA",
-# #             threads = 5, 
-# #             num_chunks = 5,
-# #             outfile = "outexample.txt")
+#     with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
+#         runner.run_fit_nullmodel()
 
-# confopt = ConfOpt(
-#     pheno_add = "data/T2_pheno_QT_repeated",
-#     cov_add = "data/T2_covar",
-#     pheno_delim = "\t",
-#     cov_delim = " ",
-#     geno_add = "data/all_filtered.bgen",
-#     sample_add = "data/MRI_samples_chr1.sample",
-#     do_filters = False,
-#     use_sample_file = True,
-#     includeVariantFile = "",
-#     stream_snps = 1000,
-#     sampleid_header_name = "IID",
-#     random_slope_header_name = "",
-#     covariates = ["PC1"],
-#     exposures = [],
-#     interactions = [],
-#     missing_key = "NA",
-#     kin_add = "data/kinship.txt",
-#     kin_delim = ' ',
-#     kin_diag = 0.5,
-#     threads = 72,
-#     num_chunks = 72,
-#     outfile = "out.txt"
-# )
+#     merged = (cap_out.output + "\n" + cap_err.output).strip()
+#     if merged:
+#         logger.info("\n****************************** C++ Null Model Output ******************************\n" + merged)
+#     else:
+#         logger.info("No C++ output captured from null model.")
+    
+    
+#     buffer = io.StringIO()
+#     logger.info("Starting dosage streaming and GWAS...")
+#     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt") 
+#     TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
+    
+#     with redirect_stdout(buffer), redirect_stderr(buffer):
+#         run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
+#     captured_output = buffer.getvalue().strip()
+#     if captured_output:
+#         logger.info("\n****************************** TGWAS Output ******************************\n" + captured_output)
+#     buffer.seek(0)
+#     buffer.truncate(0)
+#     if args.convert:
+#         output_file= os.path.join(dir_name, base_name + ".txt") 
+#         with redirect_stdout(buffer), redirect_stderr(buffer):
+#             parquet_to_text_duckdb(TGWAS_file, output_file)
+#         captured_output_conversion = buffer.getvalue().strip()
+#         if captured_output_conversion:
+#             logger.info("\n******************************Conversion of Output Binary to Text******************************\n" + captured_output_conversion)
 
-# # opt = ConfOpt(
-# #     pheno_add = "missing-simulationbyMengyu/phenotype_missing.txt",
-# #     cov_add = "missing-simulationbyMengyu/cov_missing.txt",
-# #     pheno_delim = "\t",
-# #     cov_delim = "\t",
-# #     geno_add = "missing-simulationbyMengyu/SA.bgen",
-# #     sample_add = "missing-simulationbyMengyu/SA.sample",
-# #     do_filters = False,
-# #     use_sample_file = True,
-# #     includeVariantFile = "",
-# #     stream_snps = 10000,
-# #     sampleid_header_name = "id",
-# #     random_slope_header_name = "",
-# #     covariates = ["x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10"],
-# #     exposures = [],
-# #     interactions = [],
-# #     missing_key = "NA",
-# #     kin_add = "missing-simulationbyMengyu/kinfile_extended_fam.txt",
-# #     kin_delim = '\t',
-# #     kin_diag = 1,
-# #     threads = 90,
-# #     num_chunks = 90,
-# #     outfile = "missing-x1-x10.txt"
-# # )
-
-
-# runner = GEMRunner(confopt.get()) #return opt obj from confopt obj
-
-# # Run null model fitting
-# runner.run_fit_nullmodel()
-
-
-# print("Starting streaming dosage decode...")
-# run_gwas(runner, runner.opt.outfile, snps_per_chunk=1000, device='cuda')
-# end_time_gwas = time.time()
-# print("End of running Torch GWAS file\n")
-# print("Wall time in seconds :", end_time_gwas - start_time)
+#     end_time = time.time()
+#     logger.info("\n TorchGWAS completed successfully.")
+#     logger.info(f"Wall time: {(end_time - start_time):.2f} seconds")
+# if __name__ == "__main__":
+#     main()
