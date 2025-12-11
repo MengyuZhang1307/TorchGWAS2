@@ -1440,11 +1440,18 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         SparseInverse sp(cov_copy, kin_add, kin_delim, //define scop to free kinship space
             kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
             pheno_valid_indices, false); //sp without removing missing pheno value
-        SpaMat kin_uniqueIDs = sp.get_uniqkin();
-        spm_diag_nomiss = kin_uniqueIDs.diagonal().sum();
-        spm_nomiss_dim = kin_uniqueIDs.cols();
-        // spm_diag_nomiss = sp.get_spmat().diagonal().sum();
-        // spm_nomiss_dim = sp.get_spmat().cols();
+        if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))
+        {
+            SpaMat kin_uniqueIDs = sp.get_uniqkin();
+            spm_diag_nomiss = kin_uniqueIDs.diagonal().sum();
+            spm_nomiss_dim = kin_uniqueIDs.cols();
+
+        }
+        else
+        {
+            spm_diag_nomiss = sp.get_spmat().diagonal().sum();
+            spm_nomiss_dim = sp.get_spmat().cols();
+        }
     }
     
     std::ext::V_double new_y;

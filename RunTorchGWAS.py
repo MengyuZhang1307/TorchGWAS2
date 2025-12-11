@@ -145,10 +145,11 @@ def parse_args():
     parser.add_argument("--out", type=str, default="out.txt", help="Output file name")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Computation device (default: cuda)")
     parser.add_argument("--verbose", action="store_true", help="Print null model(default: False)")
-    # parser.add_argument("--convert", action="store_true", help="Convert binary to text file (default: True)")
-    parser.add_argument("--step", choices=["step1", "step2", "step3"], default="step1",
+    parser.add_argument("--convert", action="store_true", help="Convert binary to text file (default: True)")
+    parser.add_argument("--step", choices=["all", "step1", "step2", "step3"], default="all",
                 help=(
                     "Pipeline step to run:\n"
+                    "all = perform all steps togethet\n"
                     "step1 = Fit the null model generate correction factors (write intermediate_*.txt)\n"
                     "step2 = TGWAS (write TGWAS_*.parquet)\n"
                     "step3 = Convert TGWAS_*.parquet to .txt\n"
@@ -169,6 +170,31 @@ def build_logger_and_paths(args):
     logger = setup_logger(log_file, truncate=truncate)
     return logger, dir_name, base_name
 
+def build_conf_allsteps(args):
+    """Config for all"""
+    confopt = ConfOpt(
+        pheno_add=args.pheno_file,
+        pheno_delim=normalize_delim(args.pheno_delim),
+        cov_add=args.cov_file,
+        cov_delim=normalize_delim(args.cov_delim),
+        geno_add=args.bgen,
+        sample_add=args.sample,
+        use_sample_file=bool(args.sample),
+        do_filters=bool(args.include_snp_file),
+        includeVariantFile=args.include_snp_file,
+        stream_snps=args.stream_snps,
+        sampleid_header_name=args.sampleid_name,
+        covariates=args.covar_names,
+        random_slope_header_name=args.random_slope_name,
+        missing_key=args.missing_value,
+        kin_add=args.kin_file,
+        kin_delim=normalize_delim(args.kin_delim),
+        kin_diag=args.kin_diag,
+        threads=args.threads,
+        outfile=args.out,
+        verbose=args.verbose,
+    )
+    return confopt
 
 def build_conf_step1(args):
     """Config for step1: needs phenotype + covariates, genotype files, kin."""
@@ -196,6 +222,7 @@ def build_conf_step1(args):
     )
     return confopt
 
+
 def build_conf_step2(args):
     """Config for step2: NO phenotype, but covariates, genotype files, kin."""
     confopt = ConfOpt(
@@ -219,6 +246,76 @@ def build_conf_step2(args):
         verbose=args.verbose,
     )
     return confopt
+def run_all(confopt, logger, dir_name, base_name, args):
+    """
+    All STEP:
+      - GEMRunner init
+      - run_fit_nullmodel
+      - log intermediate + TGWAS filenames
+      - Convert TGWAS_<base_name>.parquet -> <base_name>.txt
+    """
+    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
+    TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
+
+    logger.info("STEP 1: Initializing GEMRunner and fitting null model...")
+
+    # 1) C++ init
+    with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
+        runner = GEMRunner(confopt.get())
+
+    init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
+    if init_output:
+        logger.info("\n********** C++ Initialization Output **********\n" + init_output)
+
+    # 2) Null model
+    logger.info("Running null model fitting ...")
+    with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
+        runner.run_fit_nullmodel()
+
+    merged = (cap_out.output + "\n" + cap_err.output).strip()
+    if merged:
+        logger.info(
+            "\n****************************** C++ Null Model Output ******************************\n"
+            + merged
+        )
+    else:
+        logger.info("No C++ output captured from null model.")
+
+    logger.info(f"Intermediate file (correction) path: {intermediate_file}")
+    # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
+    logger.info(f"Run step2 with: --correction-add {intermediate_file}")
+    logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
+    logger.info(f"Using correction (intermediate) file: {intermediate_file}")
+    logger.info(f"TGWAS parquet output: {TGWAS_file}")
+    logger.info("Starting GWAS/TGWAS with run_gwas...")
+    cxx_buffer = io.StringIO()
+    with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+        run_gwas(
+            runner,
+            intermediate_file,               # correction file
+            TGWAS_file,
+            snps_per_chunk=args.stream_snps,
+            device=args.device,
+        )
+
+    captured_output = cxx_buffer.getvalue().strip()
+    if captured_output:
+        logger.info(
+            "\n****************************** TGWAS Output ******************************\n"
+            + captured_output)
+    logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
+    cxx_buffer.seek(0)
+    cxx_buffer.truncate(0)
+    if args.convert:
+        with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+            parquet_to_text_duckdb(TGWAS_file, output_file)
+
+    captured_output_conversion = cxx_buffer.getvalue().strip()
+    if captured_output_conversion:
+        logger.info(
+            "\n****************************** Conversion of Output Binary to Text ******************************\n"
+            + captured_output_conversion)
+
 
 def run_step1(confopt, logger, dir_name, base_name, args):
     """
@@ -226,6 +323,7 @@ def run_step1(confopt, logger, dir_name, base_name, args):
       - GEMRunner init
       - run_fit_nullmodel
       - log intermediate + TGWAS filenames
+      -run_gwas(runner, correction, TGWAS_file, ...)
     """
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
     # TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
@@ -329,12 +427,15 @@ def run_step3(logger, dir_name, base_name, args):
 def main():
     start_time = time.time()
     args = parse_args()
+    logger, dir_name, base_name = build_logger_and_paths(args)
+    if args.step == "all":
+        confopt = build_conf_allsteps(args)
+        run_all(confopt, logger, dir_name, base_name, args)
 
     # Step-specific requirements
     if args.step == "step1" and not args.pheno_file:
         raise SystemExit("STEP 1 requires --pheno-file.")
 
-    logger, dir_name, base_name = build_logger_and_paths(args)
 
     if args.step == "step1":
         confopt = build_conf_step1(args)
