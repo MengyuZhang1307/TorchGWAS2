@@ -303,6 +303,7 @@ def run_all(confopt, logger, dir_name, base_name, args):
         logger.info(
             "\n****************************** TGWAS Output ******************************\n"
             + captured_output)
+    output_file = os.path.join(dir_name, base_name + ".txt")
     logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
     cxx_buffer.seek(0)
     cxx_buffer.truncate(0)

@@ -297,19 +297,31 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         gamma = gamma_tensor[:actual_snps, :]
 
         # Regress covariates out of genotypes (Check 3: should operate on GPU)
-        if proj_A is not None and chunk_data is not None:
-            try:
-                # G = torch.from_numpy(chunk_data).float().to(device)  # shape (M, n_samples)
-                G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)
-                coeffs = proj_A @ G.T
-                fitted = cov_X @ coeffs
-                G_resid = G - fitted.T
-                geno.copy_(G_resid.float())
+        # if proj_A is not None and chunk_data is not None:
+        #     try:
+        #         # G = torch.from_numpy(chunk_data).float().to(device)  # shape (M, n_samples)
+        #         G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)
+        #         coeffs = proj_A @ G.T
+        #         fitted = cov_X @ coeffs
+        #         G_resid = G - fitted.T
+        #         geno.copy_(G_resid.float())
 
-            except Exception as e:
-                print(f"Warning: failed to regress covariates: {e}", flush=True)
+        #     except Exception as e:
+        #         print(f"Warning: failed to regress covariates: {e}", flush=True)
+        # else:
+        #     geno.copy_()torch.as_tensor(chunk_data, dtype=torch.float32, device=device)
+        if chunk_data is None:
+            raise ValueError("chunk_data is None")
 
- 
+        G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)  # (M, n)
+
+        if proj_A is None:
+            geno.copy_(G)   # (test mode till we have way for LDA)
+        else:
+            coeffs = proj_A @ G.T
+            fitted = cov_X @ coeffs
+            geno.copy_(G - fitted.T)
+        
         mean, std, t_stats, beta_coeffs, se = calc_t(
             corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre
         )
