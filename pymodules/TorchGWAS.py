@@ -44,117 +44,157 @@ def read_correction_file(file_path: str):
 
     return header, c2, c_res, sample_ids
 
-def calc_cov_proj(runner_opt, resid_sample_ids, n_samples, device):
+
+def remove_collinear_columns_np(X: np.ndarray, col_names=None, keep_first=True):
     """
-    @brief Calculate covariate projection matrix A from covariate file.
-    @param runner_opt Runner options containing covariate file path and settings.
-    @param resid_sample_ids List of sample IDs from correction file.
-    @param n_samples Number of samples.
-    @param device Torch device to place tensors on.
-    @return proj_A: torch tensor on device
-        - proj_A: projection matrix A = (XᵀX)⁻¹Xᵀ
-        -cov_X: design matrix X
+    Remove (near-)collinear columns using QR diag threshold.
+
+    Parameters
+    ----------
+    X : (n, p) np.ndarray
+        Design matrix.
+    col_names : list[str] | None
+        Optional column names length p.
+    keep_first : bool
+        If True, never drop column 0 (useful for intercept).
+
+    Returns
+    -------
+    X_new : np.ndarray
     """
-    try:
-            # Fallback: read covariate file directly from runner options, or from python input.
-            cov_file = runner_opt.cov_add
-            cov_names = list(runner_opt.covariates) if hasattr(runner_opt, 'covariates') else []
-            # choose delimiter from runner options if present, otherwise default to tab
-            sep = getattr(runner_opt, 'cov_delim', '\t') or '\t'
-            # Read with pandas and select requested covariate columns; assume sample order matches genotype order
-            cov_df = pd.read_csv(cov_file, sep=sep)
+    X = np.asarray(X)
+    n, p = X.shape
 
-            # Hard-coded covariate format: first column = family ID, second column = sample ID.
-            # We will match residual/sample IDs using the sample ID (second) column and drop both
-            # ID columns before selecting numeric covariates.
-            cols = list(cov_df.columns)
-            if len(cols) < 2:
-                raise RuntimeError("Covariate file must have at least two columns: family ID and sample ID.")
+    # QR decomposition (like HouseholderQR)
+    # R is shape (min(n,p), p) in 'reduced' mode.
+    _, R = np.linalg.qr(X, mode="reduced")
 
-            # Use the column (sample ID) for matching to intermediate residual sample IDs
-            if hasattr(runner_opt, 'sampleid_header_name') and runner_opt.sampleid_header_name:
-                sample_id_col = runner_opt.sampleid_header_name
-                if sample_id_col not in cov_df.columns:
-                    raise RuntimeError(f"Sample ID column '{sample_id_col}' not found in covariate file.")
-                sample_ids_from_cov = cov_df[sample_id_col].astype(str).values
-            else:
-                raise RuntimeError(
-                    "You must specify --sampleid-name for covariate file. "
-                    "Default behavior of using the second column is disabled."
-                )
+    # Make diagR length = p (pad zeros if p > n)
+    diagR = np.zeros(p, dtype=float)
+    d = min(n, p)
+    if d > 0:
+        diagR[:d] = np.abs(np.diag(R[:d, :d]))
 
-            # Drop the two ID columns (FID and IID) to leave only covariate columns
-            # cov_df2 = cov_df.drop(columns=[cols[0], cols[1]])
+    sqrtEps = np.sqrt(np.finfo(X.dtype).eps)
+    maxdiag = diagR.max() if p > 0 else 0.0
+    cutoff = maxdiag * sqrtEps
 
-            # Select covariate columns
-            applied_covs = None
-            if cov_names:
-                try:
-                    cov_sel = cov_df[cov_names]
-                    applied_covs = list(cov_sel.columns)
-                except Exception:
-                    # fallback: take numeric columns
-                    cov_sel = cov_df.select_dtypes(include=[np.number])
-                    applied_covs = list(cov_sel.columns)
-            else:
-                cov_sel = cov_df.select_dtypes(include=[np.number])
-                applied_covs = list(cov_sel.columns)
+    dropped_idx = [j for j in range(p) if diagR[j] < cutoff]
+    # to keep intercept
+    if keep_first and 0 in dropped_idx:
+        dropped_idx.remove(0)
 
-            # Reorder covariates to match residual/sample ID order from intermediate file (Check 2: match the Sample ID)
-            try:
-                # resid_sample_ids is read from the intermediate file earlier
-                cov_sel = cov_sel.copy()
-                cov_sel['_sample_id_for_match'] = sample_ids_from_cov
-                cov_sel.set_index('_sample_id_for_match', inplace=True)
-                # Reindex to the residual sample ID order; this will introduce NaN for missing rows
-                cov_sel = cov_sel.reindex(resid_sample_ids)
-                # If any missing after reindex, fail early
-                if cov_sel.isnull().values.any():
-                    missing = cov_sel.isnull().any(axis=1)
-                    n_missing = int(missing.sum())
-                    raise RuntimeError(f"Covariate file does not contain values for {n_missing} residual samples (after reindex).")
-                # drop index and continue
-                cov_sel.reset_index(drop=True, inplace=True)
-            except Exception as e:
-                raise
+    dropped_set = set(dropped_idx)
+    keep_idx = [j for j in range(p) if j not in dropped_set]
 
-            cov_np = cov_sel.astype(float).values
+    X_new = X[:, keep_idx]
 
-            # Validate shape
-            if cov_np.shape[0] != n_samples:
-                # try transpose if user provided (n_covariates, n_samples)
-                if cov_np.shape[1] == n_samples:
-                    cov_np = cov_np.T
-                else:
-                    raise RuntimeError(f"Covariate shape mismatch: expected {n_samples} samples, got {cov_np.shape}")
+    new_col_names = None
+    if col_names is not None:
+        new_col_names = [col_names[j] for j in keep_idx]
 
-            # Build design matrix with intercept
-            intercept = np.ones((n_samples, 1), dtype=cov_np.dtype)
-            cov_X_n = np.hstack([intercept, cov_np])  # shape (n_samples, p+1)
+    return X_new
 
-            ########################-Move to GPU-########################
-            cov_X = torch.from_numpy(cov_X_n).to(device).float()
-            # Compute XᵀX
-            XtX = cov_X.T @ cov_X
-            # Invert XᵀX
-            inv_XtX = torch.linalg.inv(XtX)
-            # Compute projection A
-            proj_A = inv_XtX @ cov_X.T
 
-            # Inform what covariates are applied (if known)
-            if applied_covs is None:
-                print("Info: genotype residualization: covariates obtained from runner.get_covariates()", flush=True)
-            elif len(applied_covs) == 0:
-                print("Info: genotype residualization: intercept only (no covariates)", flush=True)
-            else:
-                print(f"Info: genotype residualization will use covariates: {applied_covs}", flush=True)
+def has_duplicates(resid_sample_ids):
+    return len(resid_sample_ids) != len(set(resid_sample_ids))
 
-    except Exception as e:
-        print(f"Warning: failed to prepare covariate projection: {e}", flush=True)
-        cov_X = None
+
+def fill_J(resid_sample_ids, cov_sample_ids, device="cpu", dtype=torch.float32):
+    
+    """
+    resid_sample_ids: observation IDs in covariate order (after filtering)
+    sample_id_for_G:  unique IDs in the SAME order as G columns
+    """
+    id2col = {sid: j for j, sid in enumerate(resid_sample_ids)}  # required for alignment to G
+    n_obs = len(cov_sample_ids)
+    n_unique = len(resid_sample_ids)
+
+    # Since you've filtered, all should exist:
+    col_idx = torch.tensor([id2col[sid] for sid in cov_sample_ids],
+                           device=device, dtype=torch.long)
+    row_idx = torch.arange(n_obs, device=device, dtype=torch.long)
+
+    indices = torch.stack([row_idx, col_idx], dim=0)
+    values  = torch.ones(n_obs, device=device, dtype=dtype)
+
+    J = torch.sparse_coo_tensor(indices, values, (n_obs, n_unique)).coalesce()
+    return J
+
+
+
+def calc_cov_proj(runner_opt, resid_sample_ids, device):
+    """
+    geno_ids: unique IDs in the SAME order as G columns  (n_unique)
+    obs_ids: observation IDs in covariate order (after filtering)
+    Returns:
+      proj_A: (p x n_unique) if no-dup case, else None
+      cov_X:  (n_unique x p) if no-dup case, else (n_obs x p)
+      has_dup: bool (dup IDs in cov file after filtering to genotype IDs)
+      J: (n_obs x n_unique) if dup case, else None
+      obs_ids: list[str]  (IDs in cov_X row order)
+    """
+    # Treat input resid_sample_ids as genotype sample IDs in G column order (unique)
+    geno_id_set = set(resid_sample_ids)
+
+    cov_file = runner_opt.cov_add
+    cov_names = list(runner_opt.covariates) if hasattr(runner_opt, "covariates") else []
+    sep = getattr(runner_opt, "cov_delim", "\t") or "\t"
+
+    cov_df = pd.read_csv(cov_file, sep=sep)
+
+    if not (hasattr(runner_opt, "sampleid_header_name") and runner_opt.sampleid_header_name):
+        raise RuntimeError("You must specify --sampleid-name for covariate file.")
+    sample_id_col = runner_opt.sampleid_header_name
+    if sample_id_col not in cov_df.columns:
+        raise RuntimeError(f"Sample ID column '{sample_id_col}' not found in covariate file.")
+
+    sample_ids_from_cov = cov_df[sample_id_col].astype(str).to_numpy()
+
+    if cov_names:
+        cov_sel = cov_df[cov_names].copy()
+    else:
+        cov_sel = cov_df.select_dtypes(include=[np.number]).copy()
+
+    # ---- filter cov rows to genotype IDs, KEEPING COV FILE ORDER ----
+    keep_mask = pd.Series(sample_ids_from_cov).isin(geno_id_set).to_numpy()
+    cov_sel = cov_sel.iloc[keep_mask].reset_index(drop=True)
+    obs_ids = sample_ids_from_cov[keep_mask].tolist()
+
+    has_dup = has_duplicates(obs_ids)
+
+    # Build design matrix (in current obs order)
+    cov_np = cov_sel.astype(float).to_numpy()
+    intercept = np.ones((cov_np.shape[0], 1), dtype=cov_np.dtype)
+    cov_X_n = np.hstack([intercept, cov_np])  # (n_rows, p)
+
+    # move to torch
+    cov_X = torch.as_tensor(cov_X_n, device=device, dtype=torch.float32)
+
+    if not has_dup:
+        # reorder cov_X rows to match genotype order (resid_sample_ids)
+        row_map = {sid: i for i, sid in enumerate(obs_ids)}  # unique now
+        row_idx = [row_map[sid] for sid in resid_sample_ids]  # all should exist after filtering
+        cov_X = cov_X[row_idx]  # (n_unique, p)
+
+        # projection A = (X^T X)^-1 X^T  (more stable than inv: use solve)
+        XtX = cov_X.T @ cov_X
+        # # Invert XᵀX
+        # inv_XtX = torch.linalg.inv(XtX)
+        # # Compute projection A
+        # proj_A = inv_XtX @ cov_X.T
+        proj_A = torch.linalg.solve(XtX, cov_X.T)  # (p x n_unique)
+
+        J = None
+        return proj_A, cov_X, J, has_dup
+
+    else:
+        # duplicated obs IDs: keep cov order and build J to map obs->genotype columns
+        J = fill_J(resid_sample_ids, obs_ids, device=device, dtype=torch.float32)
         proj_A = None
+        return proj_A, cov_X, J, has_dup
 
-    return proj_A, cov_X
+
 
 def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
     """
@@ -251,13 +291,12 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     gamma_tensor = torch.empty(snps_per_chunk, n_corrected_res, device=device)
     
     buffer_size = 100_000
-    cov_X, proj_A = None, None
+    cov_X, proj_A, J, has_dup = None, None, None, None
     start_readcov = time.time()
     if regress_genotypes:
-        proj_A, cov_X,  = calc_cov_proj(
+        proj_A, cov_X, J, has_dup = calc_cov_proj(
         runner.opt,
         resid_sample_ids,
-        n_samples,
         device)
     end_readcov = time.time()
     print(f"Time for reading covariate file and preparing projection = {end_readcov - start_readcov:.2f}s")
@@ -315,8 +354,42 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
 
         G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)  # (M, n)
 
-        if proj_A is None:
-            geno.copy_(G)   # (test mode till we have way for LDA)
+        # if has_dup:
+        #     print("has dup")
+        #     D = J.T @ J /# (n_uniq, n_uniq)
+        #     S = cov_X.T @ J # (p, n_uniq)
+        #     # XTX = cov_X.T @ cov_X
+        #     # L = torch.linalg.cholesky(XTX)                  # XTX = L L^T
+        #     # XTX_i = torch.cholesky_solve(S, L)
+        #     # geno.copy_(D @ J - S.T @ XTX_i @ G)
+        #     XTX_i_S = torch.linalg.solve(cov_X.T @ cov_X, S) # (p, n_uniq)
+        #     fitted = D - S.T @ XTX_i_S     # (n_uniq, n_uniq)
+        #     geno.copy_(G @ fitted)      # (M, n_uniq)
+        if has_dup:
+            J = J.coalesce()
+            Jt = J.transpose(0, 1).coalesce()              # (n_uniq, n_obs)
+
+            # JT_X = J^T X  (n_uniq, p)  -- use sparse.mm (sparse @ dense)
+            JT_X = torch.sparse.mm(Jt, cov_X)       # only supports(sp*dens) (n_uniq, p)
+
+            # S = X^T J = (J^T X)^T
+            S = JT_X.T                                     # (p, n_uniq)
+
+            XTX = cov_X.T @ cov_X                          # (p, p)
+            XTX_i_S = torch.linalg.solve(XTX, S)           # (p, n_uniq)
+            # D = J.T @ J /# (n_uniq, n_uniq)
+            # D is diagonal with counts per unique ID its J col in J col sum(all 1 and 0)
+            counts = torch.sparse.sum(J, dim=0).to_dense() # (n_uniq,)
+
+            # G @ D == columnwise scaling by counts 
+            GD = G * counts.unsqueeze(0)                       # (M, n_uniq)
+            # GD = (counts.unsqueeze(1) * G.T).T
+            # G @ S^T @ (XTX^-1 S)  == (G @ JT_X) @ XTX_i_S
+            tmp = G @ JT_X                                 # (M, p)
+            corr = tmp @ XTX_i_S                           # (M, n_uniq)
+
+            geno.copy_(GD - corr)                          # (M, n_uniq)
+
         else:
             coeffs = proj_A @ G.T
             fitted = cov_X @ coeffs

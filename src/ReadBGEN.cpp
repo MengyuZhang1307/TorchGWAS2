@@ -200,7 +200,13 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
             }
             
             // Decompressors and file
-            struct DecompDel { void operator()(libdeflate_decompressor* p) const noexcept { if (p) libdeflate_free_decompressor(p); } };
+            struct DecompDel 
+            { 
+                void operator()(libdeflate_decompressor* p) const noexcept 
+                { 
+                    if (p) libdeflate_free_decompressor(p); 
+                } 
+            };
             std::unique_ptr<libdeflate_decompressor, DecompDel> decompressor(libdeflate_alloc_decompressor());
             std::unique_ptr<FILE, decltype(&fclose)> fin(fopen(bgenFile.c_str(), "rb"), &fclose);
             if (!fin) { stop = true; return; }

@@ -1280,7 +1280,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
         // J is N in Nobs
         SpaMat Jsigma_iJ = J * glmmkin.fit.sigma_i * (J.transpose());
         auto Jsigma_ix = J * glmmkin.fit.sigma_ix;
-        auto Jres = J * glmmkin.scaled_residuals;
+        DensVec Jres = J * glmmkin.scaled_residuals;
 
         if(m_vkins_sp[0].kin.m_null_kin) //If we do not have a kinship
         {
@@ -1289,6 +1289,12 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
             auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(sp1_c1)).sum();
             auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
             glmmkin.scaled_residuals_c1 = c1 * Jres;
+            size_t scaled_res_size = Jres.size();
+            if (spm_nomiss_dim > scaled_res_size) //Resize to the size of non-missing kinship
+            {
+                Jres.conservativeResize(spm_nomiss_dim);
+                Jres.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
+            }
             double sum_squ_scaled_residuals = Jres.squaredNorm(); //sum of squared absolute values
             glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (Jres.size() - 1));
         }
@@ -1299,6 +1305,12 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
             auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(sp1_c1)).sum();
             auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
             glmmkin.scaled_residuals_c1 = c1 * Jres;
+            size_t scaled_res_size = Jres.size();
+            if (spm_nomiss_dim > scaled_res_size) //Resize to the size of non-missing kinship
+            {
+                Jres.conservativeResize(spm_nomiss_dim);
+                Jres.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
+            }
             double sum_squ_scaled_residuals = Jres.squaredNorm();
             glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (Jres.size() - 1));
         }
@@ -1308,7 +1320,8 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
         SpaMat kin = m_vkins_sp[0].get_spmat();
         // double kin_diag = kin.diagonal().sum();
         auto fp_c1 = (glmmkin.fit.sigma_i.cwiseProduct(kin)).sum();
-        auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, kin) * glmmkin.fit.sigma_ix)).sum();
+        // auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, kin) * glmmkin.fit.sigma_ix)).sum();
+        auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, crossprod(kin, glmmkin.fit.sigma_ix)))).sum();
         auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
         glmmkin.scaled_residuals_c1 = c1 * glmmkin.scaled_residuals;
         //pad scaled residuals to the size of non missing kinship
