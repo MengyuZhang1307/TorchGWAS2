@@ -634,6 +634,15 @@ void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
         X_new.col(k) = m_X.col(keep_indices[k]);
     }
     m_X.swap(X_new);
+    // Update headers to match kept columns
+    std::ext::V_string hdr_new;
+    hdr_new.reserve(keep_indices.size());
+    for (int idx : keep_indices) 
+    {
+        hdr_new.push_back(cov_selected_hdrs[idx]);
+    }
+    cov_selected_hdrs.swap(hdr_new);
+
     std::cout << "****************************************************************************\n";
 }
 

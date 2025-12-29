@@ -57,6 +57,9 @@ void bgen13_get_two_vals(const unsigned char* prob_start, uint32_t bit_precision
 void calc_dosage(std::string const& bgenFile, Bgen &bgen, BoundedChunkQueue& queue, int snps_per_chunk);
 void Read_bgen_file(std::string const& bgenFile, Bgen bgen, int thread_num, int stream_snps, std::string outFile);
 
+
+
+
  
 
 

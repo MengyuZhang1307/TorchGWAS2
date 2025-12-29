@@ -80,7 +80,7 @@ class CaptureCStderr:
 
 #     return logger
 
-def setup_logger(out_path, truncate=False):
+def setup_logger(out_path, step, truncate=False):
     """
     Create a logger that prints to both file and console.
     If truncate=True, overwrite the log file.
@@ -98,7 +98,7 @@ def setup_logger(out_path, truncate=False):
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    mode = "w" if truncate else "a"
+    mode = "w" if truncate or step == "all" else "a"
     fh = logging.FileHandler(out_path, mode=mode)
     fh.setFormatter(fmt)
     logger.addHandler(fh)
@@ -167,7 +167,7 @@ def build_logger_and_paths(args):
     # For step1 we truncate; for step2/3 we append to the same log
     truncate = (args.step == "step1")
 
-    logger = setup_logger(log_file, truncate=truncate)
+    logger = setup_logger(log_file, args.step, truncate=truncate)
     return logger, dir_name, base_name
 
 def build_conf_allsteps(args):

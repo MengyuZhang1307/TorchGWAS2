@@ -13,6 +13,37 @@ Helper function to remove extra bytes
 auto trim_null = [](const char* s, size_t maxlen) -> std::string {
     return std::string(s, strnlen(s, maxlen));
 };
+
+/**************************************
+Function to read intermediate file to match the smaple_ids order
+*************************************/
+std::ext::V_string read_ids_intermediatefile(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("Cannot open file: " + path);
+
+    std::string line;
+
+    // skip first two rows
+    for (int k = 0; k < 2; ++k) 
+    {
+        if (!std::getline(in, line))
+            return {}; // file shorter than 2 lines
+    }
+
+    std::ext::V_string ids;
+    while (std::getline(in, line)) 
+    {
+        if (line.empty()) continue;
+
+        // read first token (tab/space separated)
+        std::istringstream iss(line);
+        std::string id;
+        if (!(iss >> id)) continue;
+
+        ids.push_back(id);
+    }
+    return ids;
+}
 /**************************************
 This function is revised based on the Parse function in BOLT-LMM v2.3 source code
 *************************************/
@@ -397,7 +428,10 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                         for (uint32_t i = 0; i < N && idx_k < samSize; i++) 
                         {
                             const uint32_t mp = missing_and_ploidy_info[i]; uintptr_t numer_aa, numer_ab;
-                            if (mp == 2) { bgen13_get_two_vals(probs_start, bit_precision, probs_offset, &numer_aa, &numer_ab); probs_start += (probs_offset * 2); }
+                            if (mp == 2) 
+                            { 
+                                bgen13_get_two_vals(probs_start, bit_precision, probs_offset, &numer_aa, &numer_ab); probs_start += (probs_offset * 2); 
+                            }
                             else if (mp == 130) 
                             { 
                                 if (include_idx[idx_k] == static_cast<long int>(i)) 
@@ -407,7 +441,10 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                                 probs_start += (probs_offset * 2); 
                                 continue; 
                             }
-                            else { stop = true; break; }
+                            else 
+                            { 
+                                stop = true; break; 
+                            }
                             if (include_idx[idx_k] == static_cast<long int>(i)) 
                             { 
                                 double p11 = numer_aa / double(numer_mask); 

@@ -2,14 +2,8 @@
 
 #include "SparseInverse.h"
 #include "Kinship.h"
-// #include "GEM.h"
-// #include <optional>
-// #include <unordered_set>
-// #include <iterator>
-// #include <functional>
-// #include <variant>
 
-const int MAX_N_ITER = 500; 
+// const int MAX_N_ITER = 500; 
 
 /**
  * @brief To use fitNullModel2 in GEM
