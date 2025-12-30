@@ -27,7 +27,7 @@ struct GEMOptions
     double kin_diag = 1;
     int threads;
     int num_chunks = 0;
-    std::string outfile = "Bgen_dosage.out";
+    std::string outfile = "output";
     bool verbose = false;
     GEMOptions(); 
 };

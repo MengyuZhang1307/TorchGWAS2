@@ -1,6 +1,6 @@
 #include "RunPipeline.h"
 
-GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt) 
+GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt) 
 {
     find_genofile_type();
     check_kinship_usage();
@@ -9,10 +9,20 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
 
     // Step 2 run BGEN metods
     bgen.process_bgen_header_block(opt.geno_add);
-    bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
+    if(match_ids)
+    {
+        bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
                                     shared_cov_result.covMap, opt.missing_key, 
                                     shared_cov_result.numSelCol, 
-                                    shared_cov_result.samSize);   
+                                    shared_cov_result.samSize, opt.outfile, match_ids); 
+    }
+    else
+    {
+        bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
+                                        shared_cov_result.covMap, opt.missing_key, 
+                                        shared_cov_result.numSelCol, 
+                                        shared_cov_result.samSize);   
+    }
     // bgen.get_position_bgen_variant(opt.num_chunks, opt.includeVariantFile,
     //                                          opt.do_filters);
     bgen_sample_id = bgen.sampleID;

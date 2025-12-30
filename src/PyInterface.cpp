@@ -60,7 +60,9 @@ PYBIND11_MODULE(Mygen, m)
         
         // Bind GEMRunner
         py::class_<GEMRunner>(m, "GEMRunner")
-            .def(py::init<const GEMOptions&>())  // constructor
+            // .def(py::init<const GEMOptions&>())  // constructor
+            .def(py::init<GEMOptions const&, bool>(),
+            py::arg("opt"), py::arg("match_ids") = false)
             .def_readonly("opt", &GEMRunner::opt)
             // .def("run_fit_nullmodel", &GEMRunner::run_fit_nullmodel)
             .def("run_fit_nullmodel",

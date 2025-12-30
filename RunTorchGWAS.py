@@ -262,7 +262,7 @@ def run_all(confopt, logger, dir_name, base_name, args):
     # 1) C++ init
     # with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
     #     runner = GEMRunner(confopt.get())
-    runner = GEMRunner(confopt.get())
+    runner = GEMRunner(confopt.get(), False)
     # init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
     # if init_output:
     #     logger.info("\n********** C++ Initialization Output **********\n" + init_output)
@@ -382,7 +382,7 @@ def run_step2(confopt, logger, dir_name, base_name, args):
     logger.info(f"TGWAS parquet output: {TGWAS_file}")
 
     with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-        runner = GEMRunner(confopt.get())
+        runner = GEMRunner(confopt.get(), True)
 
     init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
     if init_output:
@@ -417,6 +417,9 @@ def run_step3(logger, dir_name, base_name, args):
         - output_file (text)
         - logger
     """
+    if not args.parquet:
+        raise SystemExit("STEP 2 requires --parquet <TGWAS_file> (output of step2).")
+
     TGWAS_file = args.parquet
     output_file = os.path.join(dir_name, base_name + ".txt")
 

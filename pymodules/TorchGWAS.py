@@ -346,6 +346,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     start = time.time()
 
     for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
+        print(f"chunck data, {chunk_data}")
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
 
@@ -353,20 +354,6 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         beta = beta_tensor[:actual_snps, :]
         gamma = gamma_tensor[:actual_snps, :]
 
-        # Regress covariates out of genotypes (Check 3: should operate on GPU)
-        # if proj_A is not None and chunk_data is not None:
-        #     try:
-        #         # G = torch.from_numpy(chunk_data).float().to(device)  # shape (M, n_samples)
-        #         G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)
-        #         coeffs = proj_A @ G.T
-        #         fitted = cov_X @ coeffs
-        #         G_resid = G - fitted.T
-        #         geno.copy_(G_resid.float())
-
-        #     except Exception as e:
-        #         print(f"Warning: failed to regress covariates: {e}", flush=True)
-        # else:
-        #     geno.copy_()torch.as_tensor(chunk_data, dtype=torch.float32, device=device)
         if chunk_data is None:
             raise ValueError("chunk_data is None")
 
@@ -375,23 +362,13 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         if has_dup:
             J = J.coalesce()
             Jt = J.transpose(0, 1).coalesce()              # (n_uniq, n_obs)
-
-            # JT_X = J^T X  (n_uniq, p)  -- use sparse.mm (sparse @ dense)
             JT_X = torch.sparse.mm(Jt, cov_X)       # only supports(sp*dens) (n_uniq, p)
-
-            # S = X^T J = (J^T X)^T
             S = JT_X.T                                     # (p, n_uniq)
 
             XTX = cov_X.T @ cov_X                          # (p, p)
             XTX_i_S = torch.linalg.solve(XTX, S)           # (p, n_uniq)
-            # D = J.T @ J /# (n_uniq, n_uniq)
-            # D is diagonal with counts per unique ID its J col in J col sum(all 1 and 0)
             counts = torch.sparse.sum(J, dim=0).to_dense() # (n_uniq,)
-
-            # G @ D == columnwise scaling by counts 
             GD = G * counts.unsqueeze(0)                       # (M, n_uniq)
-            # GD = (counts.unsqueeze(1) * G.T).T
-            # G @ S^T @ (XTX^-1 S)  == (G @ JT_X) @ XTX_i_S
             tmp = G @ JT_X                                 # (M, p)
             corr = tmp @ XTX_i_S                           # (M, n_uniq)
 

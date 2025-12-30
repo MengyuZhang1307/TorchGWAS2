@@ -48,7 +48,7 @@ class Bgen
         std::vector<std::vector<uint32_t> > keepVariants;
 
         void process_bgen_header_block(std::string bgenfile);
-        void process_bgen_sample_block(const char sample_file[300], bool use_sample, std::ext::UMap_str_VV_string covmap, std::string pheno_missing_key, int numSelCol, int sam_size);
+        void process_bgen_sample_block(const char sample_file[300], bool use_sample, std::ext::UMap_str_VV_string covmap, std::string pheno_missing_key, int numSelCol, int sam_size, std::string id_path = "", bool match_ids = false);
         void get_position_bgen_variant(int threads, std::string includeVariantFile, bool do_filters);
 };
 

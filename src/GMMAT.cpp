@@ -623,7 +623,6 @@ void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
     {
         drop_flag[idx] = 1;
     }
-    std::cout << __LINE__ <<std::endl;
     std::ext::V_int keep_indices;
     keep_indices.reserve(ncols - static_cast<int>(dropped_cols.size()));
     for (int j = 0; j < ncols; ++j) 
@@ -633,7 +632,6 @@ void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
             keep_indices.push_back(j);
         }
     }
-    std::cout << __LINE__ <<std::endl;
     // Build new matrix with only non-collinear columns
     Mat X_new(nrows, static_cast<int>(keep_indices.size()));
     for (int k = 0; k < static_cast<int>(keep_indices.size()); ++k) 
@@ -643,19 +641,16 @@ void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
     m_X.swap(X_new);
     // Update headers to match kept columns
     std::ext::V_string hdr_new;
-    std::cout << __LINE__ << " keep_indices.size() " << keep_indices.size()<< std::endl;
+
     hdr_new.reserve(keep_indices.size() - 1); //one for intercept
     for (int idx : keep_indices) 
     {
-        std::cout << idx <<std::endl;
         if(idx != 0)
         {
             hdr_new.push_back(cov_selected_hdrs[idx - 1]);
         }
     }
     cov_selected_hdrs.swap(hdr_new);
-    std::cout << hdr_new.size() << std::endl;
-    std::cout << __LINE__ <<std::endl;
     std::cout << "****************************************************************************\n";
 }
 
@@ -1533,15 +1528,11 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     GEMFit gf;
     // std::ext::V_double pheno_data = conv_dv2stdVd(m_y);
     m_X = create_covdata(m_vkins_sp[0].cov.m_data_frame.copy_by_hdrs(cov_selected_hdrs));
-    std::cout << __LINE__ <<std::endl;
     remove_collinear_columns(m_X, cov_selected_hdrs);
-    std::cout << __LINE__ <<std::endl;
     std::ext::V_double cov_data = conv_dm2stdV(m_X); 
-    std::cout << __LINE__ <<std::endl;
     m_n_sel_col = cov_selected_hdrs.size();
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
                  &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, verbose); 
-    std::cout << __LINE__ <<std::endl;
     std::cout << std::flush;
     if(verbose)
     {

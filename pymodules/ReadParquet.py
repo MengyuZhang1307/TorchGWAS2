@@ -24,6 +24,12 @@ def parquet_to_text_duckdb(
     """
 
     start_time = time.time()
+    if not os.path.isfile(input_file):
+        raise FileNotFoundError(f"Input parquet not found: {input_file}")
+
+    out_dir = os.path.dirname(output_file) or "."
+    if not os.path.isdir(out_dir):
+        raise FileNotFoundError(f"Output directory does not exist: {out_dir}")
 
     # === Connect to DuckDB ===
     con = duckdb.connect(database=":memory:")
