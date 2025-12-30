@@ -260,62 +260,69 @@ def run_all(confopt, logger, dir_name, base_name, args):
     logger.info("STEP 1: Initializing GEMRunner and fitting null model...")
 
     # 1) C++ init
-    with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-        runner = GEMRunner(confopt.get())
-
-    init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
-    if init_output:
-        logger.info("\n********** C++ Initialization Output **********\n" + init_output)
+    # with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
+    #     runner = GEMRunner(confopt.get())
+    runner = GEMRunner(confopt.get())
+    # init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
+    # if init_output:
+    #     logger.info("\n********** C++ Initialization Output **********\n" + init_output)
 
     # 2) Null model
     logger.info("Running null model fitting ...")
-    with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
-        runner.run_fit_nullmodel()
+    # with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
+    #     runner.run_fit_nullmodel()
+    runner.run_fit_nullmodel()
+    # merged = (cap_out.output + "\n" + cap_err.output).strip()
+    # if merged:
+    #     logger.info(
+    #         "\n****************************** C++ Null Model Output ******************************\n"
+    #         + merged
+    #     )
+    # else:
+    #     logger.info("No C++ output captured from null model.")
 
-    merged = (cap_out.output + "\n" + cap_err.output).strip()
-    if merged:
-        logger.info(
-            "\n****************************** C++ Null Model Output ******************************\n"
-            + merged
-        )
-    else:
-        logger.info("No C++ output captured from null model.")
-
-    logger.info(f"Intermediate file (correction) path: {intermediate_file}")
-    # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
-    logger.info(f"Run step2 with: --correction-add {intermediate_file}")
-    logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
-    logger.info(f"Using correction (intermediate) file: {intermediate_file}")
-    logger.info(f"TGWAS parquet output: {TGWAS_file}")
-    logger.info("Starting GWAS/TGWAS with run_gwas...")
-    cxx_buffer = io.StringIO()
-    with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-        run_gwas(
+    # logger.info(f"Intermediate file (correction) path: {intermediate_file}")
+    # # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
+    # logger.info(f"Run step2 with: --correction-add {intermediate_file}")
+    # logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
+    # logger.info(f"Using correction (intermediate) file: {intermediate_file}")
+    # logger.info(f"TGWAS parquet output: {TGWAS_file}")
+    # logger.info("Starting GWAS/TGWAS with run_gwas...")
+    # cxx_buffer = io.StringIO()
+    # with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+    #     run_gwas(
+    #         runner,
+    #         intermediate_file,               # correction file
+    #         TGWAS_file,
+    #         snps_per_chunk=args.stream_snps,
+    #         device=args.device,
+    #     )
+    run_gwas(
             runner,
             intermediate_file,               # correction file
             TGWAS_file,
             snps_per_chunk=args.stream_snps,
             device=args.device,
         )
-
-    captured_output = cxx_buffer.getvalue().strip()
-    if captured_output:
-        logger.info(
-            "\n****************************** TGWAS Output ******************************\n"
-            + captured_output)
+    # captured_output = cxx_buffer.getvalue().strip()
+    # if captured_output:
+    #     logger.info(
+    #         "\n****************************** TGWAS Output ******************************\n"
+    #         + captured_output)
     output_file = os.path.join(dir_name, base_name + ".txt")
-    logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
-    cxx_buffer.seek(0)
-    cxx_buffer.truncate(0)
+    # logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
+    # cxx_buffer.seek(0)
+    # cxx_buffer.truncate(0)
+    # if args.convert:
+    #     with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
+    #         parquet_to_text_duckdb(TGWAS_file, output_file)
     if args.convert:
-        with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-            parquet_to_text_duckdb(TGWAS_file, output_file)
-
-    captured_output_conversion = cxx_buffer.getvalue().strip()
-    if captured_output_conversion:
-        logger.info(
-            "\n****************************** Conversion of Output Binary to Text ******************************\n"
-            + captured_output_conversion)
+        parquet_to_text_duckdb(TGWAS_file, output_file)
+    # captured_output_conversion = cxx_buffer.getvalue().strip()
+    # if captured_output_conversion:
+    #     logger.info(
+    #         "\n****************************** Conversion of Output Binary to Text ******************************\n"
+    #         + captured_output_conversion)
 
 
 def run_step1(confopt, logger, dir_name, base_name, args):

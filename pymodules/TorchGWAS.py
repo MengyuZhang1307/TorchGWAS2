@@ -45,7 +45,7 @@ def read_correction_file(file_path: str):
     return header, c2, c_res, sample_ids
 
 
-def remove_collinear_columns_np(X: np.ndarray, col_names=None, keep_first=True):
+def remove_collinear_columns_np(X: np.ndarray, col_names=None):
     """
     Remove (near-)collinear columns using QR diag threshold.
 
@@ -62,6 +62,7 @@ def remove_collinear_columns_np(X: np.ndarray, col_names=None, keep_first=True):
     -------
     X_new : np.ndarray
     """
+    print("Checking collinearity for the regressed covariates...\n")
     X = np.asarray(X)
     n, p = X.shape
 
@@ -80,20 +81,38 @@ def remove_collinear_columns_np(X: np.ndarray, col_names=None, keep_first=True):
     cutoff = maxdiag * sqrtEps
 
     dropped_idx = [j for j in range(p) if diagR[j] < cutoff]
-    # to keep intercept
-    if keep_first and 0 in dropped_idx:
-        dropped_idx.remove(0)
+
+    if dropped_idx:
+        dropped_names = []
+        for j in dropped_idx:
+            if j == 0:
+                # intercept got flagged 
+                dropped_names.append("intercept")
+            else:
+                jj = j - 1
+                if 0 <= jj < len(col_names):
+                    dropped_names.append(col_names[jj])
+        print(f"Dropped columns: {dropped_names}")
+    else:
+        print("Dropped columns: []")
 
     dropped_set = set(dropped_idx)
     keep_idx = [j for j in range(p) if j not in dropped_set]
 
     X_new = X[:, keep_idx]
 
-    new_col_names = None
     if col_names is not None:
-        new_col_names = [col_names[j] for j in keep_idx]
+        new_col_names = []
+        for j in keep_idx:
+            if j == 0:
+                # skip intercept:
+                continue
+            else:
+                jj = j - 1
+                if 0 <= jj < len(col_names):
+                    new_col_names.append(col_names[jj])
 
-    return X_new
+    return X_new, new_col_names
 
 
 def has_duplicates(resid_sample_ids):
@@ -110,7 +129,6 @@ def fill_J(resid_sample_ids, cov_sample_ids, device="cpu", dtype=torch.float32):
     n_obs = len(cov_sample_ids)
     n_unique = len(resid_sample_ids)
 
-    # Since you've filtered, all should exist:
     col_idx = torch.tensor([id2col[sid] for sid in cov_sample_ids],
                            device=device, dtype=torch.long)
     row_idx = torch.arange(n_obs, device=device, dtype=torch.long)
@@ -167,7 +185,7 @@ def calc_cov_proj(runner_opt, resid_sample_ids, device):
     cov_np = cov_sel.astype(float).to_numpy()
     intercept = np.ones((cov_np.shape[0], 1), dtype=cov_np.dtype)
     cov_X_n = np.hstack([intercept, cov_np])  # (n_rows, p)
-
+    cov_X_n, new_cov_nam = remove_collinear_columns_np(cov_X_n, cov_names)
     # move to torch
     cov_X = torch.as_tensor(cov_X_n, device=device, dtype=torch.float32)
 
@@ -354,17 +372,6 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
 
         G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)  # (M, n)
 
-        # if has_dup:
-        #     print("has dup")
-        #     D = J.T @ J /# (n_uniq, n_uniq)
-        #     S = cov_X.T @ J # (p, n_uniq)
-        #     # XTX = cov_X.T @ cov_X
-        #     # L = torch.linalg.cholesky(XTX)                  # XTX = L L^T
-        #     # XTX_i = torch.cholesky_solve(S, L)
-        #     # geno.copy_(D @ J - S.T @ XTX_i @ G)
-        #     XTX_i_S = torch.linalg.solve(cov_X.T @ cov_X, S) # (p, n_uniq)
-        #     fitted = D - S.T @ XTX_i_S     # (n_uniq, n_uniq)
-        #     geno.copy_(G @ fitted)      # (M, n_uniq)
         if has_dup:
             J = J.coalesce()
             Jt = J.transpose(0, 1).coalesce()              # (n_uniq, n_obs)
