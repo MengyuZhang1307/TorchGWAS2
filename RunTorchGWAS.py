@@ -362,7 +362,7 @@ def run_step2(confopt, logger, dir_name, base_name, args):
     logger.info(f"TGWAS parquet output: {TGWAS_file}")
 
     with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-        runner = GEMRunner(confopt.get(), True) # True to match IDs for eacg genotype with intermediate file
+        runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with intermediate file
 
     init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
     if init_output:

@@ -346,7 +346,6 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     start = time.time()
 
     for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
-        print(f"chunck data, {chunk_data}")
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
 

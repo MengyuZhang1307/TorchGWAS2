@@ -24,8 +24,8 @@ std::ext::V_string read_ids_intermediatefile(std::string& id_path)
     fs::path out_name = out_path.filename();              // "out_param-buff-11-10-noverbose"
     fs::path inter_path = out_dir / ("intermediate_" + out_name.string() + ".txt");    
     std::ifstream in(inter_path);
-    if (!in) throw std::runtime_error("Cannot open vorrection file");
-
+    if (!in) throw std::runtime_error("Cannot open the correction file. Make sure you are using the correct file from step1 "
+        "(and that you did not change the --out name between step1 and step2).")
     std::string line;
 
     // skip first two rows
