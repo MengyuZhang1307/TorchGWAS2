@@ -14,7 +14,12 @@ import logging
 from contextlib import redirect_stdout, redirect_stderr
 import io
 import tempfile
+from pathlib import Path
+import re
 
+def safe_stem(p: str) -> str:
+    s = Path(p).stem
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", s)
 class CaptureCStdout:
     def __enter__(self):
         self._orig_stdout_fd = sys.stdout.fileno()
@@ -55,30 +60,6 @@ class CaptureCStderr:
         self.tmp.seek(0)
         self.output = self.tmp.read().decode()
         self.tmp.close()
-
-# def setup_logger(out_path):
-#     """Create a logger that prints to both file and console."""
-#     if os.path.exists(out_path):
-#         os.remove(out_path)
-#     log_file = out_path 
-
-#     logger = logging.getLogger("TGWAS")
-#     logger.setLevel(logging.INFO)
-
-#     fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s",
-#                             datefmt="%Y-%m-%d %H:%M:%S")
-
-#     # File handler
-#     fh = logging.FileHandler(log_file, mode="a")
-#     fh.setFormatter(fmt)
-#     logger.addHandler(fh)
-
-#     # Console handler
-#     ch = logging.StreamHandler()
-#     ch.setFormatter(fmt)
-#     logger.addHandler(ch)
-
-#     return logger
 
 def setup_logger(out_path, step, truncate=False):
     """
@@ -123,8 +104,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run TorchGWAS using GEM2 and Torch backend.")
     parser.add_argument("--pheno-file", type=str, help="Phenotype file path (required for step1)")
     parser.add_argument("--cov-file", type=str, help="Covariate file path (required for step1 and step2)")
-    parser.add_argument("--bgen", type=str, help="genotype file path (required for step1 and step2)")
-    parser.add_argument("--sample", type=str, help="BGEN Sample file path (optional, required for step1 and step2 if BGEN)")
+    parser.add_argument("--bgen", nargs="+", default=[], help="Step2: BGEN file(s).")
+    parser.add_argument("--sample", nargs="+", default=[], help="Step2: SAMPLE file(s).")
     parser.add_argument("--kin-file", type=str, default="", help="Kinship file path (optional, required for step1 and step2 if using kinship)")
     parser.add_argument("--kin-diag", type=float, default=1.0, help="Diagonal value of " \
                         "kinship matrix that not accounting for inbreeding (Default: 1.0)")
@@ -140,7 +121,6 @@ def parse_args():
     parser.add_argument("--random-slope-name", type=str, default = "", help="Column name in the covariate file that contains random slope (default: "").")
     parser.add_argument("--missing-value", type=str, default="NA", help="Indicates how missing values in the phenotype and covariate files are stored.")
     parser.add_argument("--threads", type=int, help="Number of threads")
-    # parser.add_argument("--num-chunks", type=int, help="Number of chunks")
     parser.add_argument("--stream-snps", type=int, default=1000, help="Number of SNPs per chunk")
     parser.add_argument("--out", type=str, default="out.txt", help="Output file name")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Computation device (default: cuda)")
@@ -155,13 +135,13 @@ def parse_args():
                     "step3 = Convert TGWAS_*.parquet to .txt\n"
                 ))
     parser.add_argument("--correction-add", dest="correction_add", type=str, default="", help="Path to intermediate file produced by step1 (used in step2).")
-    parser.add_argument("--parquet", type=str, default="", help="Input TGWAS parquet file for step3.",)
+    parser.add_argument("--parquet", nargs="+", default=[], help="Input TGWAS parquet file(s) for step3.")
     return parser.parse_args()
 
 def build_logger_and_paths(args):
     """Only handles logger + dir/base names based on --out."""
     dir_name = os.path.dirname(args.out) or "."
-    base_name = os.path.basename(args.out)
+    base_name = os.path.splitext(os.path.basename(args.out))[0]
     log_file = os.path.join(dir_name, base_name + ".log")
 
     # For step1 we truncate; for step2/3 we append to the same log
@@ -368,21 +348,21 @@ def run_step1(confopt, logger, dir_name, base_name, args):
 def run_step2(confopt, logger, dir_name, base_name, args):
     """
     STEP 2:
-      - GEMRunner init again
+      - GEMRunner init
       - run_gwas(runner, correction, TGWAS_file, ...)
     """
     if not args.correction_add:
         raise SystemExit("STEP 2 requires --correction <intermediate_file> (output of step1).")
 
     intermediate_file = args.correction_add                     # this *is* the correction file
-    TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
+    TGWAS_file = os.path.join(dir_name, base_name + ".parquet")
 
     logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
     logger.info(f"Using correction (intermediate) file: {intermediate_file}")
     logger.info(f"TGWAS parquet output: {TGWAS_file}")
 
     with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-        runner = GEMRunner(confopt.get(), True)
+        runner = GEMRunner(confopt.get(), True) # True to match IDs for eacg genotype with intermediate file
 
     init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
     if init_output:
@@ -409,7 +389,7 @@ def run_step2(confopt, logger, dir_name, base_name, args):
             "\n****************************** TGWAS Output ******************************\n"
             + captured_output)
 
-def run_step3(logger, dir_name, base_name, args):
+def run_step3(logger, args):
     """
     STEP 3:
         - Convert TGWAS_<base_name>.parquet -> <base_name>.txt
@@ -421,8 +401,8 @@ def run_step3(logger, dir_name, base_name, args):
         raise SystemExit("STEP 2 requires --parquet <TGWAS_file> (output of step2).")
 
     TGWAS_file = args.parquet
-    output_file = os.path.join(dir_name, base_name + ".txt")
-
+    # output_file = os.path.join(dir_name, base_name + ".txt")
+    output_file = args.out 
     cxx_buffer = io.StringIO()
     logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
 
@@ -453,11 +433,31 @@ def main():
         run_step1(confopt, logger, dir_name, base_name, args)
 
     elif args.step == "step2":
-        confopt = build_conf_step2(args)
-        run_step2(confopt, logger, dir_name, base_name, args)
+        if len(args.bgen) != len(args.sample):
+            raise SystemExit(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
+        for bgen_i, sample_i in zip(args.bgen, args.sample):
+            sub = argparse.Namespace(**vars(args))
+            sub.bgen = bgen_i       
+            sub.sample = sample_i  
+
+            base_i = safe_stem(bgen_i)   # output: TGWAS_<base_i>.parquet
+            logger.info("*" * 80)
+            logger.info(f"STEP 2 batch item: bgen={bgen_i} -> sample={sample_i}")
+            confopt = build_conf_step2(sub)
+            run_step2(confopt, logger, dir_name, base_i, sub)
 
     elif args.step == "step3":
-        run_step3(logger, dir_name, base_name, args)
+        for pq in args.parquet:
+            sub = argparse.Namespace(**vars(args))
+
+            # keep parquet as a single file for this run
+            sub.parquet = pq   # use string per run 
+
+            # output name: same stem, .txt
+            sub.out = str(safe_stem(pq).with_suffix(".txt"))
+
+            logger.info("*" * 80)
+            run_step3(logger, sub)
 
     end_time = time.time()
     logger.info("\nTorchGWAS pipeline step completed successfully.")
@@ -465,80 +465,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# def main():
-#     start_time = time.time()
-#     args = parse_args()
-    
-#     confopt = ConfOpt(
-#         pheno_add=args.pheno_file,
-#         pheno_delim=normalize_delim(args.pheno_delim),
-#         cov_add=args.cov_file,
-#         cov_delim=normalize_delim(args.cov_delim),
-#         geno_add=args.bgen,
-#         sample_add=args.sample,
-#         use_sample_file=bool(args.sample),
-#         do_filters=bool(args.include_snp_file),
-#         includeVariantFile=args.include_snp_file,
-#         stream_snps=args.stream_snps,
-#         sampleid_header_name= args.sampleid_name,
-#         covariates=args.covar_names,
-#         random_slope_header_name=args.random_slope_name,
-#         missing_key=args.missing_value,
-#         kin_add=args.kin_file,
-#         kin_delim=normalize_delim(args.kin_delim),
-#         kin_diag=args.kin_diag,
-#         threads=args.threads,
-#         outfile=args.out,
-#         verbose = args.verbose
-#     )
-#     dir_name = os.path.dirname(args.out)
-#     base_name = os.path.basename(args.out)
-#     log_file = os.path.join(dir_name, base_name + ".log") 
-#     logger = setup_logger(log_file)
-#     logger.info("Initializing GEMRunner...")
-
-#     with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-#         runner = GEMRunner(confopt.get())
-
-#     init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
-#     if init_output:
-#         logger.info("\n********** C++ Initialization Output **********\n" + init_output)
-#         logger.info("Running null model fitting ...")
-
-#     with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
-#         runner.run_fit_nullmodel()
-
-#     merged = (cap_out.output + "\n" + cap_err.output).strip()
-#     if merged:
-#         logger.info("\n****************************** C++ Null Model Output ******************************\n" + merged)
-#     else:
-#         logger.info("No C++ output captured from null model.")
-    
-    
-#     buffer = io.StringIO()
-#     logger.info("Starting dosage streaming and GWAS...")
-#     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt") 
-#     TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
-    
-#     with redirect_stdout(buffer), redirect_stderr(buffer):
-#         run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=args.stream_snps, device=args.device)
-#     captured_output = buffer.getvalue().strip()
-#     if captured_output:
-#         logger.info("\n****************************** TGWAS Output ******************************\n" + captured_output)
-#     buffer.seek(0)
-#     buffer.truncate(0)
-#     if args.convert:
-#         output_file= os.path.join(dir_name, base_name + ".txt") 
-#         with redirect_stdout(buffer), redirect_stderr(buffer):
-#             parquet_to_text_duckdb(TGWAS_file, output_file)
-#         captured_output_conversion = buffer.getvalue().strip()
-#         if captured_output_conversion:
-#             logger.info("\n******************************Conversion of Output Binary to Text******************************\n" + captured_output_conversion)
-
-#     end_time = time.time()
-#     logger.info("\n TorchGWAS completed successfully.")
-#     logger.info(f"Wall time: {(end_time - start_time):.2f} seconds")
-# if __name__ == "__main__":
-#     main()
