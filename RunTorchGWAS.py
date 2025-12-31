@@ -429,6 +429,14 @@ def main():
 
 
     if args.step == "step1":
+        if len(args.bgen) != 1:
+            raise SystemExit("STEP 1 requires exactly ONE --bgen file.")
+        if len(args.sample) != 1:
+            raise SystemExit("STEP 1 requires exactly ONE --sample file.")
+
+    # convert list -> string for pybind GEMOptions
+        args.bgen = args.bgen[0]
+        args.sample = args.sample[0]
         confopt = build_conf_step1(args)
         run_step1(confopt, logger, dir_name, base_name, args)
 
@@ -437,10 +445,10 @@ def main():
             raise SystemExit(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
         for bgen_i, sample_i in zip(args.bgen, args.sample):
             sub = argparse.Namespace(**vars(args))
-            sub.bgen = bgen_i       
+            sub.bgen = bgen_i   
             sub.sample = sample_i  
 
-            base_i = safe_stem(bgen_i)   # output: TGWAS_<base_i>.parquet
+            base_i = safe_stem(bgen_i) + "_" + base_name   # output: TGWAS_<base_i>.parquet
             logger.info("*" * 80)
             logger.info(f"STEP 2 batch item: bgen={bgen_i} -> sample={sample_i}")
             confopt = build_conf_step2(sub)
@@ -454,7 +462,7 @@ def main():
             sub.parquet = pq   # use string per run 
 
             # output name: same stem, .txt
-            sub.out = str(safe_stem(pq).with_suffix(".txt"))
+            sub.out = str(Path(pq).with_suffix(".txt"))
 
             logger.info("*" * 80)
             run_step3(logger, sub)
