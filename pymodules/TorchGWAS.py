@@ -371,7 +371,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
             tmp = G @ JT_X                                 # (M, p)
             corr = tmp @ XTX_i_S                           # (M, n_uniq)
 
-            geno.copy_(GD - corr)                          # (M, n_uniq)
+            geno.copy_(GD - corr) / counts.unsqueeze(0)                         # (M, n_uniq)
 
         else:
             coeffs = proj_A @ G.T
