@@ -17,6 +17,13 @@ import tempfile
 from pathlib import Path
 import re
 
+def clone_conf_for_geno(confopt, bgen, sample):
+    new_conf = copy.deepcopy(confopt)
+    new_conf.geno_add = [bgen]
+    new_conf.sample_add = [sample]
+    new_conf.use_sample_file = bool(sample)
+    return new_conf
+
 def safe_stem(p: str) -> str:
     s = Path(p).stem
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s)
@@ -226,85 +233,65 @@ def build_conf_step2(args):
         verbose=args.verbose,
     )
     return confopt
-def run_all(confopt, logger, dir_name, base_name, args):
-    """
-    All STEP:
-      - GEMRunner init
-      - run_fit_nullmodel
-      - log intermediate + TGWAS filenames
-      - Convert TGWAS_<base_name>.parquet -> <base_name>.txt
-    """
-    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
-    TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
 
-    logger.info("STEP 1: Initializing GEMRunner and fitting null model...")
+def run_all(logger, dir_name, base_name, args):
+    if args.step == "all":
+        # ------------------
+        # STEP 1 (once)
+        # ------------------
+        logger.info("STEP 1: Fitting null model")
 
-    # 1) C++ init
-    # with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-    #     runner = GEMRunner(confopt.get())
-    runner = GEMRunner(confopt.get(), False)
-    # init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
-    # if init_output:
-    #     logger.info("\n********** C++ Initialization Output **********\n" + init_output)
+        sub_step1 = argparse.Namespace(**vars(args))
+        sub_step1.bgen = args.bgen[0]
+        sub_step1.sample = args.sample[0]
 
-    # 2) Null model
-    logger.info("Running null model fitting ...")
-    # with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
-    #     runner.run_fit_nullmodel()
-    runner.run_fit_nullmodel()
-    # merged = (cap_out.output + "\n" + cap_err.output).strip()
-    # if merged:
-    #     logger.info(
-    #         "\n****************************** C++ Null Model Output ******************************\n"
-    #         + merged
-    #     )
-    # else:
-    #     logger.info("No C++ output captured from null model.")
+        conf_step1 = build_conf_step1(sub_step1)
+        # run_step1(conf_step1, logger, dir_name, base_name, sub_step1)
+        intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
+        runner = GEMRunner(conf_step1.get())        
+        #Null model
+        runner.run_fit_nullmodel()
+        # ------------------
+        # STEP 2 (loop)
+        # ------------------
+        for bgen_i, sample_i in zip(args.bgen, args.sample):
+            sub_step2 = argparse.Namespace(**vars(args))
+            sub_step2.bgen = bgen_i
+            sub_step2.sample = sample_i
 
-    # logger.info(f"Intermediate file (correction) path: {intermediate_file}")
-    # # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
-    # logger.info(f"Run step2 with: --correction-add {intermediate_file}")
-    # logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
-    # logger.info(f"Using correction (intermediate) file: {intermediate_file}")
-    # logger.info(f"TGWAS parquet output: {TGWAS_file}")
-    # logger.info("Starting GWAS/TGWAS with run_gwas...")
-    # cxx_buffer = io.StringIO()
-    # with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-    #     run_gwas(
-    #         runner,
-    #         intermediate_file,               # correction file
-    #         TGWAS_file,
-    #         snps_per_chunk=args.stream_snps,
-    #         device=args.device,
-    #     )
-    run_gwas(
-            runner,
-            intermediate_file,               # correction file
-            TGWAS_file,
-            snps_per_chunk=args.stream_snps,
-            device=args.device,
-        )
-    # captured_output = cxx_buffer.getvalue().strip()
-    # if captured_output:
-    #     logger.info(
-    #         "\n****************************** TGWAS Output ******************************\n"
-    #         + captured_output)
-    output_file = os.path.join(dir_name, base_name + ".txt")
-    # logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
-    # cxx_buffer.seek(0)
-    # cxx_buffer.truncate(0)
-    # if args.convert:
-    #     with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-    #         parquet_to_text_duckdb(TGWAS_file, output_file)
-    if args.convert:
-        parquet_to_text_duckdb(TGWAS_file, output_file)
-    # captured_output_conversion = cxx_buffer.getvalue().strip()
-    # if captured_output_conversion:
-    #     logger.info(
-    #         "\n****************************** Conversion of Output Binary to Text ******************************\n"
-    #         + captured_output_conversion)
+            base_i = safe_stem(bgen_i) + "_" + base_name
+
+            conf_step2 = build_conf_step2(sub_step2)
+            # run_step2(confopt, logger, dir_name, base_i, sub)
+            TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
+            runner = GEMRunner(conf_step2.get(), True) 
+            run_gwas(
+                runner,
+                intermediate_file,               # correction file
+                TGWAS_file,
+                snps_per_chunk=args.stream_snps,
+                device=args.device,
+            )
 
 
+        # ------------------
+        # STEP 3
+        # ------------------
+        if args.convert:
+            logger.info("Conversion done per BGEN during step2")
+            for bgen_i in args.bgen:
+                base_i = safe_stem(bgen_i) + "_" + base_name
+                parquet_file = os.path.join(dir_name, base_i + ".parquet")
+                txt_file = os.path.join(dir_name, base_i + ".txt")
+
+                if not os.path.exists(parquet_file):
+                    raise SystemExit(f"Parquet file not found, skipping: {parquet_file}")
+
+                logger.info(f"Converting: {parquet_file} -> {txt_file}")
+                parquet_to_text_duckdb(parquet_file, txt_file)
+
+
+# Broken steps:
 def run_step1(confopt, logger, dir_name, base_name, args):
     """
     STEP 1:
@@ -398,16 +385,16 @@ def run_step3(logger, args):
         - logger
     """
     if not args.parquet:
-        raise SystemExit("STEP 2 requires --parquet <TGWAS_file> (output of step2).")
+        raise SystemExit("STEP 2 requires --parquet  (output of step2).")
 
-    TGWAS_file = args.parquet
+    parquet_file = args.parquet
     # output_file = os.path.join(dir_name, base_name + ".txt")
     output_file = args.out 
     cxx_buffer = io.StringIO()
-    logger.info(f"STEP 3: Converting {TGWAS_file} -> {output_file} ...")
+    logger.info(f"STEP 3: Converting {parquet_file} -> {output_file} ...")
 
     with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-        parquet_to_text_duckdb(TGWAS_file, output_file)
+        parquet_to_text_duckdb(parquet_file, output_file)
 
     captured_output_conversion = cxx_buffer.getvalue().strip()
     if captured_output_conversion:
@@ -420,8 +407,8 @@ def main():
     args = parse_args()
     logger, dir_name, base_name = build_logger_and_paths(args)
     if args.step == "all":
-        confopt = build_conf_allsteps(args)
-        run_all(confopt, logger, dir_name, base_name, args)
+        # confopt = build_conf_allsteps(args)
+        run_all(logger, dir_name, base_name, args)
 
     # Step-specific requirements
     if args.step == "step1" and not args.pheno_file:
