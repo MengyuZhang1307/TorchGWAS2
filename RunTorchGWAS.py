@@ -16,86 +16,69 @@ import io
 import tempfile
 from pathlib import Path
 import re
+import traceback
 
-def clone_conf_for_geno(confopt, bgen, sample):
-    new_conf = copy.deepcopy(confopt)
-    new_conf.geno_add = [bgen]
-    new_conf.sample_add = [sample]
-    new_conf.use_sample_file = bool(sample)
-    return new_conf
+def _ensure_parent_dir(path: str):
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+
+
+def setup_pipeline_log(out_prefix: str, step_name: str, mode: str = "a") -> str:
+    """
+    mode:
+      - "w" => create/truncate (Step 1)
+      - "a" => append (Step 2/3)
+    """
+    if mode not in ("w", "a"):
+        raise ValueError("mode must be 'w' or 'a'")
+
+    log_path = out_prefix + ".log"
+    log_dir = os.path.dirname(log_path)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+
+    # If Step 1: truncate first
+    if mode == "w":
+        with open(log_path, "w"):
+            pass
+
+    # OS-level redirect (append from now on)
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(fd, 2)  # stderr
+    os.dup2(fd, 1)  # stdout
+    os.close(fd)
+
+    # Re-wrap Python streams (line-buffered)
+    sys.stdout = os.fdopen(1, "w", buffering=1)
+    sys.stderr = os.fdopen(2, "w", buffering=1)
+
+    # Python logging -> stderr (now the log file)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+
+    h = logging.StreamHandler(sys.stderr)
+    fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+    h.setFormatter(fmt)
+    root.addHandler(h)
+
+    logging.info("=" * 72)
+    logging.info(step_name)
+    logging.info(f"LOG FILE: {log_path}  (mode={mode})")
+    logging.info("=" * 72)
+
+    # Uncaught exceptions -> log
+def _excepthook(exc_type, exc, tb):
+    logging.error("Uncaught Python exception:")
+    logging.error("".join(traceback.format_exception(exc_type, exc, tb)).rstrip())
+    sys.excepthook = _excepthook
+    return log_path
+
 
 def safe_stem(p: str) -> str:
     s = Path(p).stem
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s)
-class CaptureCStdout:
-    def __enter__(self):
-        self._orig_stdout_fd = sys.stdout.fileno()
-
-        # Save a duplicate of the original file descriptor
-        self._saved_stdout_fd = os.dup(self._orig_stdout_fd)
-
-        # Create a temporary file to capture output
-        self._tmpfile = tempfile.TemporaryFile(mode="w+b")
-
-        # Redirect stdout to the temporary file
-        os.dup2(self._tmpfile.fileno(), self._orig_stdout_fd)
-
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        # Restore the original stdout
-        os.dup2(self._saved_stdout_fd, self._orig_stdout_fd)
-
-        # Read captured output
-        self._tmpfile.seek(0)
-        self.output = self._tmpfile.read().decode()
-
-        # Cleanup
-        self._tmpfile.close()
-        os.close(self._saved_stdout_fd)
-class CaptureCStderr:
-    def __enter__(self):
-        self.fd = sys.stderr.fileno()
-        self.saved_fd = os.dup(self.fd)
-        self.tmp = tempfile.TemporaryFile(mode="w+b")
-        os.dup2(self.tmp.fileno(), self.fd)
-        return self
-
-    def __exit__(self, *args):
-        os.dup2(self.saved_fd, self.fd)
-        os.close(self.saved_fd)
-        self.tmp.seek(0)
-        self.output = self.tmp.read().decode()
-        self.tmp.close()
-
-def setup_logger(out_path, step, truncate=False):
-    """
-    Create a logger that prints to both file and console.
-    If truncate=True, overwrite the log file.
-    If truncate=False, append to the existing file.
-    """
-    logger = logging.getLogger("TGWAS")
-    logger.setLevel(logging.INFO)
-
-    # IMPORTANT: avoid duplicate handlers if called multiple times
-    if logger.handlers:
-        logger.handlers.clear()
-
-    fmt = logging.Formatter(
-        "[%(asctime)s] %(levelname)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    mode = "w" if truncate or step == "all" else "a"
-    fh = logging.FileHandler(out_path, mode=mode)
-    fh.setFormatter(fmt)
-    logger.addHandler(fh)
-
-    ch = logging.StreamHandler()
-    ch.setFormatter(fmt)
-    logger.addHandler(ch)
-
-    return logger
 
 def normalize_delim(s):
     # Convert to single-character delimiter that C++ expects
@@ -141,7 +124,7 @@ def parse_args():
                     "step2 = TGWAS (write TGWAS_*.parquet)\n"
                     "step3 = Convert TGWAS_*.parquet to .txt\n"
                 ))
-    parser.add_argument("--correction-add", dest="correction_add", type=str, default="", help="Path to intermediate file produced by step1 (used in step2).")
+
     parser.add_argument("--parquet", nargs="+", default=[], help="Input TGWAS parquet file(s) for step3.")
     return parser.parse_args()
 
@@ -150,12 +133,7 @@ def build_logger_and_paths(args):
     dir_name = os.path.dirname(args.out) or "."
     base_name = os.path.splitext(os.path.basename(args.out))[0]
     log_file = os.path.join(dir_name, base_name + ".log")
-
-    # For step1 we truncate; for step2/3 we append to the same log
-    truncate = (args.step == "step1")
-
-    logger = setup_logger(log_file, args.step, truncate=truncate)
-    return logger, dir_name, base_name
+    return  dir_name, base_name
 
 def build_conf_allsteps(args):
     """Config for all"""
@@ -234,12 +212,13 @@ def build_conf_step2(args):
     )
     return confopt
 
-def run_all(logger, dir_name, base_name, args):
+def run_all(dir_name, base_name, args):
     if args.step == "all":
         # ------------------
         # STEP 1 (once)
         # ------------------
-        logger.info("STEP 1: Fitting null model")
+        
+        print("STEP 1: Fitting null model")
 
         sub_step1 = argparse.Namespace(**vars(args))
         sub_step1.bgen = args.bgen[0]
@@ -254,6 +233,7 @@ def run_all(logger, dir_name, base_name, args):
         # ------------------
         # STEP 2 (loop)
         # ------------------
+        print("STEP 2: Running Torch GWAS")
         for bgen_i, sample_i in zip(args.bgen, args.sample):
             sub_step2 = argparse.Namespace(**vars(args))
             sub_step2.bgen = bgen_i
@@ -278,7 +258,7 @@ def run_all(logger, dir_name, base_name, args):
         # STEP 3
         # ------------------
         if args.convert:
-            logger.info("Conversion done per BGEN during step2")
+            print("STEP 3: Converting binary to text")
             for bgen_i in args.bgen:
                 base_i = safe_stem(bgen_i) + "_" + base_name
                 parquet_file = os.path.join(dir_name, base_i + ".parquet")
@@ -287,7 +267,7 @@ def run_all(logger, dir_name, base_name, args):
                 if not os.path.exists(parquet_file):
                     raise SystemExit(f"Parquet file not found, skipping: {parquet_file}")
 
-                logger.info(f"Converting: {parquet_file} -> {txt_file}")
+                print(f"Converting: {parquet_file} -> {txt_file}")
                 parquet_to_text_duckdb(parquet_file, txt_file)
 
 
@@ -306,26 +286,11 @@ def run_step1(confopt, logger, dir_name, base_name, args):
     logger.info("STEP 1: Initializing GEMRunner and fitting null model...")
 
     # 1) C++ init
-    with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-        runner = GEMRunner(confopt.get())
-
-    init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
-    if init_output:
-        logger.info("\n********** C++ Initialization Output **********\n" + init_output)
+    runner = GEMRunner(confopt.get())
 
     # 2) Null model
     logger.info("Running null model fitting ...")
-    with CaptureCStdout() as cap_out, CaptureCStderr() as cap_err:
-        runner.run_fit_nullmodel()
-
-    merged = (cap_out.output + "\n" + cap_err.output).strip()
-    if merged:
-        logger.info(
-            "\n****************************** C++ Null Model Output ******************************\n"
-            + merged
-        )
-    else:
-        logger.info("No C++ output captured from null model.")
+    runner.run_fit_nullmodel()
 
     logger.info(f"Intermediate file (correction) path: {intermediate_file}")
     # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
@@ -336,45 +301,26 @@ def run_step2(confopt, logger, dir_name, base_name, args):
     """
     STEP 2:
       - GEMRunner init
-      - run_gwas(runner, correction, TGWAS_file, ...)
+      - run_gwas(runner, correction, parquet file, ...)
     """
-    if not args.correction_add:
-        raise SystemExit("STEP 2 requires --correction <intermediate_file> (output of step1).")
-
-    intermediate_file = args.correction_add                     # this *is* the correction file
+    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
     TGWAS_file = os.path.join(dir_name, base_name + ".parquet")
 
     logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
     logger.info(f"Using correction (intermediate) file: {intermediate_file}")
     logger.info(f"TGWAS parquet output: {TGWAS_file}")
 
-    with CaptureCStdout() as cap_init, CaptureCStderr() as cap_init_err:
-        runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with intermediate file
+    runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with intermediate file
 
-    init_output = (cap_init.output + "\n" + cap_init_err.output).strip()
-    if init_output:
-        logger.info(
-            "\n********** C++ Initialization Output (Step 2) **********\n"
-            + init_output
-        )
-
-    cxx_buffer = io.StringIO()
     logger.info("Starting GWAS/TGWAS with run_gwas...")
 
-    with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-        run_gwas(
-            runner,
-            intermediate_file,               # correction file
-            TGWAS_file,
-            snps_per_chunk=args.stream_snps,
-            device=args.device,
-        )
-
-    captured_output = cxx_buffer.getvalue().strip()
-    if captured_output:
-        logger.info(
-            "\n****************************** TGWAS Output ******************************\n"
-            + captured_output)
+    run_gwas(
+        runner,
+        intermediate_file,               # correction file
+        TGWAS_file,
+        snps_per_chunk=args.stream_snps,
+        device=args.device,
+    )
 
 def run_step3(logger, args):
     """
@@ -390,32 +336,27 @@ def run_step3(logger, args):
     parquet_file = args.parquet
     # output_file = os.path.join(dir_name, base_name + ".txt")
     output_file = args.out 
-    cxx_buffer = io.StringIO()
+
     logger.info(f"STEP 3: Converting {parquet_file} -> {output_file} ...")
 
-    with redirect_stdout(cxx_buffer), redirect_stderr(cxx_buffer):
-        parquet_to_text_duckdb(parquet_file, output_file)
+    parquet_to_text_duckdb(parquet_file, output_file)
 
-    captured_output_conversion = cxx_buffer.getvalue().strip()
-    if captured_output_conversion:
-        logger.info(
-            "\n****************************** Conversion of Output Binary to Text ******************************\n"
-            + captured_output_conversion)
 
 def main():
     start_time = time.time()
     args = parse_args()
-    logger, dir_name, base_name = build_logger_and_paths(args)
+    dir_name, base_name = build_logger_and_paths(args)
     if args.step == "all":
-        # confopt = build_conf_allsteps(args)
-        run_all(logger, dir_name, base_name, args)
+        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="w")
+        run_all(dir_name, base_name, args)
 
     # Step-specific requirements
-    if args.step == "step1" and not args.pheno_file:
-        raise SystemExit("STEP 1 requires --pheno-file.")
 
 
     if args.step == "step1":
+        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="w")
+        if not args.pheno_file:
+            raise SystemExit("STEP 1 requires --pheno-file.")
         if len(args.bgen) != 1:
             raise SystemExit("STEP 1 requires exactly ONE --bgen file.")
         if len(args.sample) != 1:
@@ -428,6 +369,7 @@ def main():
         run_step1(confopt, logger, dir_name, base_name, args)
 
     elif args.step == "step2":
+        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="a")
         if len(args.bgen) != len(args.sample):
             raise SystemExit(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
         for bgen_i, sample_i in zip(args.bgen, args.sample):
@@ -442,6 +384,7 @@ def main():
             run_step2(confopt, logger, dir_name, base_i, sub)
 
     elif args.step == "step3":
+        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="a")
         for pq in args.parquet:
             sub = argparse.Namespace(**vars(args))
 
@@ -455,8 +398,8 @@ def main():
             run_step3(logger, sub)
 
     end_time = time.time()
-    logger.info("\nTorchGWAS pipeline step completed successfully.")
-    logger.info(f"Wall time: {(end_time - start_time):.2f} seconds")
+    print("\nTorchGWAS pipeline step completed successfully.")
+    print(f"Wall time: {(end_time - start_time):.2f} seconds")
 
 if __name__ == "__main__":
     main()

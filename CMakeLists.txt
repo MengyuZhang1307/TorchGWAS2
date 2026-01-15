@@ -244,6 +244,14 @@ FetchContent_Declare(fmt
  GIT_TAG 11.0.2
 )
 FetchContent_MakeAvailable(fmt)
+#Fetch spdlog ======================================================
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.13.0
+)
+FetchContent_MakeAvailable(spdlog)
+
 #PYBIND11=================================================================
 set(PYBIND11_PYTHON_VERSION 3.11)
 set(ENV{LD_LIBRARY_PATH} "$ENV{HOME}/local/Python-3.11.6/")
@@ -439,6 +447,7 @@ target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")
 target_link_libraries(Mygen PRIVATE pybind11::module
                   fmt
+                  spdlog::spdlog
                   eigen
                   armadillo 
                   Boost::thread
