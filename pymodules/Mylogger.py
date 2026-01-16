@@ -1,4 +1,4 @@
-import os, threading, atexit
+import sys, os, threading, atexit
 
 class FDTee:
     """
@@ -9,12 +9,11 @@ class FDTee:
         flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if truncate else os.O_APPEND)
         self.log_fd = os.open(log_path, flags, 0o644)
 
-        self.orig_out = os.dup(1)  # terminal/pipeline stdout
-        self.orig_err = os.dup(2)  # terminal/pipeline stderr
+        self.orig_out = os.dup(1)
+        self.orig_err = os.dup(2)
 
         self.r_fd, self.w_fd = os.pipe()
 
-        # Redirect process stdout/stderr -> pipe
         os.dup2(self.w_fd, 1)
         os.dup2(self.w_fd, 2)
         os.close(self.w_fd)
@@ -24,6 +23,13 @@ class FDTee:
 
         self.t = threading.Thread(target=self._pump, daemon=True)
         self.t.start()
+
+        # Make Python wrappers flush aggressively (helps Python prints)
+        try:
+            sys.stdout.reconfigure(line_buffering=True, write_through=True)
+            sys.stderr.reconfigure(line_buffering=True, write_through=True)
+        except Exception:
+            pass
 
         atexit.register(self.close)
 
@@ -42,45 +48,48 @@ class FDTee:
                 data = os.read(self.r_fd, 4096)
             except OSError:
                 break
-
             if not data:
                 break
 
-            # terminal
             if write_term:
-                ok = self._safe_write(self.orig_out, data)
-                if not ok:
-                    write_term = False  # stop trying terminal
-
-            # log file
+                if not self._safe_write(self.orig_out, data):
+                    write_term = False
             if write_log:
-                ok = self._safe_write(self.log_fd, data)
-                if not ok:
-                    write_log = False  # stop trying log
-
-            # if both destinations failed, still keep draining (discard output)
-            # so the main process never blocks.
+                if not self._safe_write(self.log_fd, data):
+                    write_log = False
 
         try:
             os.close(self.r_fd)
         except OSError:
             pass
-
     def close(self):
         with self._lock:
             if self._closed:
                 return
             self._closed = True
 
-            # restore stdout/stderr
+            # flush python buffers
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except Exception:
+                pass
+
+            # restore stdout/stderr (this closes the pipe write end)
             try:
                 os.dup2(self.orig_out, 1)
                 os.dup2(self.orig_err, 2)
             except OSError:
                 pass
 
-            for fd in (self.orig_out, self.orig_err, self.log_fd):
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+        # IMPORTANT: wait for pump to drain remaining bytes
+        if self.t.is_alive():
+            self.t.join(timeout=2.0)
+
+        # now it’s safe to close fds
+        for fd in (self.orig_out, self.orig_err, self.log_fd):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+

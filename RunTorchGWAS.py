@@ -24,9 +24,8 @@ import atexit
 
 _TEE = None
 
-def setup_pipeline_log(out_prefix: str, step_name: str = "PIPELINE", mode: str = "a"):
+def setup_pipeline_log(log_path: str, step_name: str = "PIPELINE", mode: str = "a"):
     global _TEE
-    log_path = out_prefix + ".log"
 
     if _TEE is None:
         _TEE = FDTee(log_path, truncate=(mode == "w"))
@@ -242,7 +241,8 @@ def run_all(dir_name, base_name, args):
                 txt_file = os.path.join(dir_name, base_i + ".txt")
 
                 if not os.path.exists(parquet_file):
-                    raise SystemExit(f"Parquet file not found, skipping: {parquet_file}")
+                    logging.error(f"Parquet file not found, skipping: {parquet_file}")
+                    raise SystemExit(2)
 
                 print(f"Converting: {parquet_file} -> {txt_file}")
                 parquet_to_text_duckdb(parquet_file, txt_file)
@@ -271,7 +271,7 @@ def run_step1(confopt, dir_name, base_name, args):
 
     print(f"Intermediate file (correction) path: {intermediate_file}")
     # print(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
-    print(f"Run step2 with: --correction-add {intermediate_file}")
+    print(f"Run step2 with: correction file {intermediate_file}")
 
  
 def run_step2(confopt, dir_name, base_i, base_name, args):
@@ -283,7 +283,7 @@ def run_step2(confopt, dir_name, base_i, base_name, args):
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
     TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
 
-    print("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
+    # print("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
     print(f"Using correction (intermediate) file: {intermediate_file}")
     print(f"TGWAS parquet output: {TGWAS_file}")
 
@@ -308,7 +308,8 @@ def run_step3(args):
         - logger
     """
     if not args.parquet:
-        raise SystemExit("STEP 2 requires --parquet  (output of step2).")
+        logging.error("STEP 2 requires --parquet  (output of step2).")
+        raise SystemExit(2)
 
     parquet_file = args.parquet
     # output_file = os.path.join(dir_name, base_name + ".txt")
@@ -320,63 +321,85 @@ def run_step3(args):
 
 
 def main():
+    global _TEE
     start_time = time.time()
-    args = parse_args()
-    dir_name, base_name = build_logger_and_paths(args)
-    if args.step == "all":
-        setup_pipeline_log(args.out, mode="w")
-        run_all(dir_name, base_name, args)
+    try:
+        args = parse_args()
+        dir_name, base_name = build_logger_and_paths(args)
+        log_file = os.path.join(dir_name, base_name + ".log")
+        if args.step == "all":
+            setup_pipeline_log(log_file, mode="w")
+            run_all(dir_name, base_name, args)
 
-    # Step-specific requirements
+        # Step-specific requirements
 
 
-    if args.step == "step1":
-        setup_pipeline_log(args.out, mode="w")
-        if not args.pheno_file:
-            raise SystemExit("STEP 1 requires --pheno-file.")
-        if len(args.bgen) != 1:
-            raise SystemExit("STEP 1 requires exactly ONE --bgen file.")
-        if len(args.sample) != 1:
-            raise SystemExit("STEP 1 requires exactly ONE --sample file.")
+        if args.step == "step1":
+            setup_pipeline_log(log_file, mode="w")
+            if not args.pheno_file:
+                logging.error("STEP 1 requires --pheno-file.")
+                raise SystemExit(2)
+            if len(args.bgen) != 1:
+                logging.error("STEP 1 requires exactly ONE --bgen file.")
+                raise SystemExit(2)
+            if len(args.sample) != 1:
+                logging.error("STEP 1 requires exactly ONE --sample file.")
+                raise SystemExit(2)
 
-    # convert list -> string for pybind GEMOptions
-        args.bgen = args.bgen[0]
-        args.sample = args.sample[0]
-        confopt = build_conf_step1(args)
-        run_step1(confopt, dir_name, base_name, args)
+        # convert list -> string for pybind GEMOptions
+            args.bgen = args.bgen[0]
+            args.sample = args.sample[0]
+            confopt = build_conf_step1(args)
+            run_step1(confopt, dir_name, base_name, args)
 
-    elif args.step == "step2":
-        setup_pipeline_log(args.out, mode="a")
-        if len(args.bgen) != len(args.sample):
-            raise SystemExit(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
-        for bgen_i, sample_i in zip(args.bgen, args.sample):
-            sub = argparse.Namespace(**vars(args))
-            sub.bgen = bgen_i   
-            sub.sample = sample_i  
+        elif args.step == "step2":
+            setup_pipeline_log(log_file, mode="a")
+            if len(args.bgen) != len(args.sample):
+                logging.error(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
+                raise SystemExit(2)
+            for bgen_i, sample_i in zip(args.bgen, args.sample):
+                sub = argparse.Namespace(**vars(args))
+                sub.bgen = bgen_i   
+                sub.sample = sample_i  
 
-            base_i = safe_stem(bgen_i) + "_" + base_name   # output: TGWAS_<base_i>.parquet
-            print("*" * 80)
-            print(f"STEP 2 batch item: bgen={bgen_i} -> sample={sample_i}")
-            confopt = build_conf_step2(sub)
-            run_step2(confopt, dir_name, base_i, base_name, sub)
+                base_i = safe_stem(bgen_i) + "_" + base_name   # output: TGWAS_<base_i>.parquet
+                print("*" * 80)
+                print(f"STEP 2 batch item: bgen={bgen_i} -> sample={sample_i}")
+                confopt = build_conf_step2(sub)
+                run_step2(confopt, dir_name, base_i, base_name, sub)
 
-    elif args.step == "step3":
-        setup_pipeline_log(args.out, mode="a")
-        for pq in args.parquet:
-            sub = argparse.Namespace(**vars(args))
+        elif args.step == "step3":
+            setup_pipeline_log(log_file, mode="a")
+            for pq in args.parquet:
+                sub = argparse.Namespace(**vars(args))
 
-            # keep parquet as a single file for this run
-            sub.parquet = pq   # use string per run 
+                # keep parquet as a single file for this run
+                sub.parquet = pq   # use string per run 
 
-            # output name: same stem, .txt
-            sub.out = str(Path(pq).with_suffix(".txt"))
+                # output name: same stem, .txt
+                sub.out = str(Path(pq).with_suffix(".txt"))
 
-            print("*" * 80)
-            run_step3(sub)
+                print("*" * 80)
+                run_step3(sub)
 
-    end_time = time.time()
-    print("\nTorchGWAS pipeline step completed successfully.")
-    print(f"Wall time: {(end_time - start_time):.2f} seconds")
+        end_time = time.time()
+        print("\nTorchGWAS pipeline step completed successfully.")
+        print(f"Wall time: {(end_time - start_time):.2f} seconds")
+    except SystemExit:
+        # keep SystemExit behavior (argparse / your raise SystemExit)
+        raise
+    except Exception:
+        # THIS will now go into the log because tee is still active
+        logging.exception("Uncaught Python exception:")
+        raise SystemExit(1)
+    
+    finally:
+        try:
+            logging.shutdown() 
+        finally:
+            if _TEE is not None:
+                _TEE.close()
+                _TEE = None
 
 if __name__ == "__main__":
     main()
