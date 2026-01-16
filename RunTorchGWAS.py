@@ -7,6 +7,7 @@ from pymodules import ConfOpt
 from pymodules import GEMRunner
 from pymodules import run_gwas
 from pymodules import parquet_to_text_duckdb
+from pymodules import FDTee
 import numpy as np
 import time
 import argparse
@@ -17,63 +18,39 @@ import tempfile
 from pathlib import Path
 import re
 import traceback
-
-def _ensure_parent_dir(path: str):
-    d = os.path.dirname(path)
-    if d:
-        os.makedirs(d, exist_ok=True)
+import threading
+import atexit
 
 
-def setup_pipeline_log(out_prefix: str, step_name: str, mode: str = "a") -> str:
-    """
-    mode:
-      - "w" => create/truncate (Step 1)
-      - "a" => append (Step 2/3)
-    """
-    if mode not in ("w", "a"):
-        raise ValueError("mode must be 'w' or 'a'")
+_TEE = None
 
+def setup_pipeline_log(out_prefix: str, step_name: str = "PIPELINE", mode: str = "a"):
+    global _TEE
     log_path = out_prefix + ".log"
-    log_dir = os.path.dirname(log_path)
-    if log_dir:
-        os.makedirs(log_dir, exist_ok=True)
 
-    # If Step 1: truncate first
-    if mode == "w":
-        with open(log_path, "w"):
-            pass
+    if _TEE is None:
+        _TEE = FDTee(log_path, truncate=(mode == "w"))
 
-    # OS-level redirect (append from now on)
-    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-    os.dup2(fd, 2)  # stderr
-    os.dup2(fd, 1)  # stdout
-    os.close(fd)
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        root.handlers.clear()
 
-    # Re-wrap Python streams (line-buffered)
-    sys.stdout = os.fdopen(1, "w", buffering=1)
-    sys.stderr = os.fdopen(2, "w", buffering=1)
+        h = logging.StreamHandler(sys.stderr)  # goes through FDTee -> terminal + log
+        fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s",
+                                "%Y-%m-%d %H:%M:%S")
+        h.setFormatter(fmt)
+        root.addHandler(h)
 
-    # Python logging -> stderr (now the log file)
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.handlers.clear()
-
-    h = logging.StreamHandler(sys.stderr)
-    fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s", "%Y-%m-%d %H:%M:%S")
-    h.setFormatter(fmt)
-    root.addHandler(h)
+        def _excepthook(exc_type, exc, tb):
+            logging.error("Uncaught Python exception:")
+            logging.error("".join(traceback.format_exception(exc_type, exc, tb)).rstrip())
+        sys.excepthook = _excepthook
 
     logging.info("=" * 72)
     logging.info(step_name)
-    logging.info(f"LOG FILE: {log_path}  (mode={mode})")
     logging.info("=" * 72)
-
-    # Uncaught exceptions -> log
-def _excepthook(exc_type, exc, tb):
-    logging.error("Uncaught Python exception:")
-    logging.error("".join(traceback.format_exception(exc_type, exc, tb)).rstrip())
-    sys.excepthook = _excepthook
     return log_path
+
 
 
 def safe_stem(p: str) -> str:
@@ -225,7 +202,7 @@ def run_all(dir_name, base_name, args):
         sub_step1.sample = args.sample[0]
 
         conf_step1 = build_conf_step1(sub_step1)
-        # run_step1(conf_step1, logger, dir_name, base_name, sub_step1)
+
         intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
         runner = GEMRunner(conf_step1.get())        
         #Null model
@@ -242,7 +219,7 @@ def run_all(dir_name, base_name, args):
             base_i = safe_stem(bgen_i) + "_" + base_name
 
             conf_step2 = build_conf_step2(sub_step2)
-            # run_step2(confopt, logger, dir_name, base_i, sub)
+
             TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
             runner = GEMRunner(conf_step2.get(), True) 
             run_gwas(
@@ -272,7 +249,7 @@ def run_all(dir_name, base_name, args):
 
 
 # Broken steps:
-def run_step1(confopt, logger, dir_name, base_name, args):
+def run_step1(confopt, dir_name, base_name, args):
     """
     STEP 1:
       - GEMRunner init
@@ -283,36 +260,36 @@ def run_step1(confopt, logger, dir_name, base_name, args):
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
     # TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
 
-    logger.info("STEP 1: Initializing GEMRunner and fitting null model...")
+    print("STEP 1: Initializing GEMRunner and fitting null model...")
 
     # 1) C++ init
     runner = GEMRunner(confopt.get())
 
     # 2) Null model
-    logger.info("Running null model fitting ...")
+    print("Running null model fitting ...")
     runner.run_fit_nullmodel()
 
-    logger.info(f"Intermediate file (correction) path: {intermediate_file}")
-    # logger.info(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
-    logger.info(f"Run step2 with: --correction-add {intermediate_file}")
+    print(f"Intermediate file (correction) path: {intermediate_file}")
+    # print(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
+    print(f"Run step2 with: --correction-add {intermediate_file}")
 
  
-def run_step2(confopt, logger, dir_name, base_name, args):
+def run_step2(confopt, dir_name, base_i, base_name, args):
     """
     STEP 2:
       - GEMRunner init
       - run_gwas(runner, correction, parquet file, ...)
     """
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
-    TGWAS_file = os.path.join(dir_name, base_name + ".parquet")
+    TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
 
-    logger.info("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
-    logger.info(f"Using correction (intermediate) file: {intermediate_file}")
-    logger.info(f"TGWAS parquet output: {TGWAS_file}")
+    print("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
+    print(f"Using correction (intermediate) file: {intermediate_file}")
+    print(f"TGWAS parquet output: {TGWAS_file}")
 
     runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with intermediate file
 
-    logger.info("Starting GWAS/TGWAS with run_gwas...")
+    print("Starting GWAS/TGWAS with run_gwas...")
 
     run_gwas(
         runner,
@@ -322,7 +299,7 @@ def run_step2(confopt, logger, dir_name, base_name, args):
         device=args.device,
     )
 
-def run_step3(logger, args):
+def run_step3(args):
     """
     STEP 3:
         - Convert TGWAS_<base_name>.parquet -> <base_name>.txt
@@ -337,7 +314,7 @@ def run_step3(logger, args):
     # output_file = os.path.join(dir_name, base_name + ".txt")
     output_file = args.out 
 
-    logger.info(f"STEP 3: Converting {parquet_file} -> {output_file} ...")
+    print(f"STEP 3: Converting {parquet_file} -> {output_file} ...")
 
     parquet_to_text_duckdb(parquet_file, output_file)
 
@@ -347,14 +324,14 @@ def main():
     args = parse_args()
     dir_name, base_name = build_logger_and_paths(args)
     if args.step == "all":
-        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="w")
+        setup_pipeline_log(args.out, mode="w")
         run_all(dir_name, base_name, args)
 
     # Step-specific requirements
 
 
     if args.step == "step1":
-        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="w")
+        setup_pipeline_log(args.out, mode="w")
         if not args.pheno_file:
             raise SystemExit("STEP 1 requires --pheno-file.")
         if len(args.bgen) != 1:
@@ -366,10 +343,10 @@ def main():
         args.bgen = args.bgen[0]
         args.sample = args.sample[0]
         confopt = build_conf_step1(args)
-        run_step1(confopt, logger, dir_name, base_name, args)
+        run_step1(confopt, dir_name, base_name, args)
 
     elif args.step == "step2":
-        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="a")
+        setup_pipeline_log(args.out, mode="a")
         if len(args.bgen) != len(args.sample):
             raise SystemExit(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
         for bgen_i, sample_i in zip(args.bgen, args.sample):
@@ -378,13 +355,13 @@ def main():
             sub.sample = sample_i  
 
             base_i = safe_stem(bgen_i) + "_" + base_name   # output: TGWAS_<base_i>.parquet
-            logger.info("*" * 80)
-            logger.info(f"STEP 2 batch item: bgen={bgen_i} -> sample={sample_i}")
+            print("*" * 80)
+            print(f"STEP 2 batch item: bgen={bgen_i} -> sample={sample_i}")
             confopt = build_conf_step2(sub)
-            run_step2(confopt, logger, dir_name, base_i, sub)
+            run_step2(confopt, dir_name, base_i, base_name, sub)
 
     elif args.step == "step3":
-        setup_pipeline_log(args.out, "STEP 1: FIT NULL MODEL", mode="a")
+        setup_pipeline_log(args.out, mode="a")
         for pq in args.parquet:
             sub = argparse.Namespace(**vars(args))
 
@@ -394,8 +371,8 @@ def main():
             # output name: same stem, .txt
             sub.out = str(Path(pq).with_suffix(".txt"))
 
-            logger.info("*" * 80)
-            run_step3(logger, sub)
+            print("*" * 80)
+            run_step3(sub)
 
     end_time = time.time()
     print("\nTorchGWAS pipeline step completed successfully.")
