@@ -1,7 +1,13 @@
 #include "RunPipeline.h"
+#include "Logger.h"
+
 
 GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt) 
 {
+    if(!match_ids)
+    {
+        LoggerSetup::init(opt.outfile);
+    }
     find_genofile_type();
     check_kinship_usage();
     // Step 1:  Read covariate file

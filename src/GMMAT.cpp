@@ -1256,13 +1256,22 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
         glmmkin.fit.W = glmmkin.fit.dmu_deta;
 		glmmkin.fit.sigma_ix = fit_glmm_ai.sigma_ix;
 		glmmkin.fit.sigma_i = fit_glmm_ai.sigma_i;
-        if(verbose)
+        // if(verbose)
+        // {
+        //     std::cout << "iteration: " << i << '\n';
+        //     std::cout << "Variance component estimates (m_tau):\n" << m_tau << '\n';
+        //     std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+        // }
+        if(check_convergence(glmmkin.fit.alpha, alpha0, m_tau, tau0, tol, i, maxiter)) 
         {
-            std::cout << "iteration: " << i << '\n';
-            std::cout << "Variance component estimates (m_tau):\n" << m_tau << '\n';
-            std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+            if(verbose)
+            {
+                std::cout << "iteration: " << i << '\n';
+                std::cout << "Variance component estimates (m_tau):\n" << m_tau << '\n';
+                std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+            }
+            break;
         }
-        if(check_convergence(glmmkin.fit.alpha, alpha0, m_tau, tau0, tol, i, maxiter)) break;
     } 
     
     glmmkin.converged = i < maxiter ? true : false;

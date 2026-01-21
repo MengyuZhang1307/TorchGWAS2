@@ -12,7 +12,7 @@ import numpy as np
 import time
 import argparse
 import logging
-from contextlib import redirect_stdout, redirect_stderr
+# from contextlib import redirect_stdout, redirect_stderr
 import io
 import tempfile
 from pathlib import Path
@@ -20,15 +20,30 @@ import re
 import traceback
 import threading
 import atexit
+import faulthandler
 
+
+def setup_step1_log(log_file, mode="a"):
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(logging.INFO)
+    root.propagate = False
+
+    fh = logging.FileHandler(log_file, mode=mode, delay=False)
+    fh.setFormatter(logging.Formatter("%(asctime)s [PY] %(levelname)s: %(message)s"))
+    root.addHandler(fh)
+    sh = logging.StreamHandler(sys.stderr)
+    sh.setFormatter(logging.Formatter("[PY] %(levelname)s: %(message)s"))
+    root.addHandler(sh)
 
 _TEE = None
 
-def setup_pipeline_log(log_path: str, step_name: str = "PIPELINE", mode: str = "a"):
+def setup_pipeline_log(log_path: str, mode: str = "a"):
     global _TEE
 
     if _TEE is None:
-        _TEE = FDTee(log_path, truncate=(mode == "w"))
+        # _TEE = FDTee(log_path, truncate=(mode == "w"))
+        _TEE = FDTee(log_path, truncate=False, tee_to_terminal=True)
 
         root = logging.getLogger()
         root.setLevel(logging.INFO)
@@ -44,10 +59,6 @@ def setup_pipeline_log(log_path: str, step_name: str = "PIPELINE", mode: str = "
             logging.error("Uncaught Python exception:")
             logging.error("".join(traceback.format_exception(exc_type, exc, tb)).rstrip())
         sys.excepthook = _excepthook
-
-    logging.info("=" * 72)
-    logging.info(step_name)
-    logging.info("=" * 72)
     return log_path
 
 
@@ -188,64 +199,70 @@ def build_conf_step2(args):
     )
     return confopt
 
-def run_all(dir_name, base_name, args):
-    if args.step == "all":
-        # ------------------
-        # STEP 1 (once)
-        # ------------------
-        
-        print("STEP 1: Fitting null model")
+def run_all(dir_name, base_name, args, log_file):
+    # ------------------
+    # STEP 1 (once)
+    # ------------------
+    logging.info("%s", "*" * 80)
+    logging.info("STEP 1: Fitting null model")
+    logging.info("%s", "*" * 80)
+    sub_step1 = argparse.Namespace(**vars(args))
+    sub_step1.bgen = args.bgen[0]
+    sub_step1.sample = args.sample[0]
+    conf_step1 = build_conf_step1(sub_step1)
 
-        sub_step1 = argparse.Namespace(**vars(args))
-        sub_step1.bgen = args.bgen[0]
-        sub_step1.sample = args.sample[0]
+    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
+    runner = GEMRunner(conf_step1.get())        
+    #Null model
+    runner.run_fit_nullmodel()
+    logging.info("Intermediate file (correction) path: %s", intermediate_file)
+    setup_pipeline_log(log_file, mode="a")
+    # ------------------
+    # STEP 2 (loop)
+    # ------------------
+    print("*" * 80)
+    print("STEP 2: Running Torch GWAS")
+    print("*" * 80)
+    for bgen_i, sample_i in zip(args.bgen, args.sample):
+        sub_step2 = argparse.Namespace(**vars(args))
+        sub_step2.bgen = bgen_i
+        sub_step2.sample = sample_i
 
-        conf_step1 = build_conf_step1(sub_step1)
+        base_i = safe_stem(bgen_i) + "_" + base_name
 
-        intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
-        runner = GEMRunner(conf_step1.get())        
-        #Null model
-        runner.run_fit_nullmodel()
-        # ------------------
-        # STEP 2 (loop)
-        # ------------------
-        print("STEP 2: Running Torch GWAS")
-        for bgen_i, sample_i in zip(args.bgen, args.sample):
-            sub_step2 = argparse.Namespace(**vars(args))
-            sub_step2.bgen = bgen_i
-            sub_step2.sample = sample_i
+        conf_step2 = build_conf_step2(sub_step2)
 
+        TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
+        runner = GEMRunner(conf_step2.get(), True) 
+        run_gwas(
+            runner,
+            intermediate_file,               # correction file
+            TGWAS_file,
+            snps_per_chunk=args.stream_snps,
+            device=args.device,
+        )
+        print(f"TGWAS parquet output: {TGWAS_file}")
+
+
+    # ------------------
+    # STEP 3
+    # ------------------
+    if args.convert:
+        print("*" * 80)
+        logging.info("STEP 3: Converting binary to text")
+        print("*" * 80)
+        for bgen_i in args.bgen:
             base_i = safe_stem(bgen_i) + "_" + base_name
+            parquet_file = os.path.join(dir_name, base_i + ".parquet")
+            output_file = os.path.join(dir_name, base_i + ".txt")
 
-            conf_step2 = build_conf_step2(sub_step2)
+            if not os.path.exists(parquet_file):
+                logging.error(f"Parquet file not found, skipping: {parquet_file}")
+                raise SystemExit(2)
 
-            TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
-            runner = GEMRunner(conf_step2.get(), True) 
-            run_gwas(
-                runner,
-                intermediate_file,               # correction file
-                TGWAS_file,
-                snps_per_chunk=args.stream_snps,
-                device=args.device,
-            )
-
-
-        # ------------------
-        # STEP 3
-        # ------------------
-        if args.convert:
-            print("STEP 3: Converting binary to text")
-            for bgen_i in args.bgen:
-                base_i = safe_stem(bgen_i) + "_" + base_name
-                parquet_file = os.path.join(dir_name, base_i + ".parquet")
-                txt_file = os.path.join(dir_name, base_i + ".txt")
-
-                if not os.path.exists(parquet_file):
-                    logging.error(f"Parquet file not found, skipping: {parquet_file}")
-                    raise SystemExit(2)
-
-                print(f"Converting: {parquet_file} -> {txt_file}")
-                parquet_to_text_duckdb(parquet_file, txt_file)
+            # print(f"Converting: {parquet_file} -> {output_file}")
+            print(f"STEP 3: Converting {parquet_file} -> {output_file}")
+            parquet_to_text_duckdb(parquet_file, output_file)
 
 
 # Broken steps:
@@ -258,21 +275,15 @@ def run_step1(confopt, dir_name, base_name, args):
       -run_gwas(runner, correction, TGWAS_file, ...)
     """
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
-    # TGWAS_file = os.path.join(dir_name, "TGWAS_" + base_name + ".parquet")
-
-    print("STEP 1: Initializing GEMRunner and fitting null model...")
+    print("STEP 1: fitting null model...")
 
     # 1) C++ init
     runner = GEMRunner(confopt.get())
 
     # 2) Null model
-    print("Running null model fitting ...")
     runner.run_fit_nullmodel()
 
-    print(f"Intermediate file (correction) path: {intermediate_file}")
-    # print(f"TGWAS parquet file (for step2/step3): {TGWAS_file}")
-    print(f"Run step2 with: correction file {intermediate_file}")
-
+    print(f"Intermediate file (correction) path: {intermediate_file}")    
  
 def run_step2(confopt, dir_name, base_i, base_name, args):
     """
@@ -284,7 +295,6 @@ def run_step2(confopt, dir_name, base_i, base_name, args):
     TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
 
     # print("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
-    print(f"Using correction (intermediate) file: {intermediate_file}")
     print(f"TGWAS parquet output: {TGWAS_file}")
 
     runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with intermediate file
@@ -308,34 +318,36 @@ def run_step3(args):
         - logger
     """
     if not args.parquet:
-        logging.error("STEP 2 requires --parquet  (output of step2).")
+        print("STEP 3 requires --parquet  (output of step2).")
         raise SystemExit(2)
 
     parquet_file = args.parquet
     # output_file = os.path.join(dir_name, base_name + ".txt")
     output_file = args.out 
 
-    print(f"STEP 3: Converting {parquet_file} -> {output_file} ...")
-
+    print(f"STEP 3: Converting {parquet_file} -> {output_file}")
     parquet_to_text_duckdb(parquet_file, output_file)
 
 
 def main():
     global _TEE
     start_time = time.time()
+    args = parse_args()
+    crash_fp = open(args.out + ".crash.log", "w", buffering=1)
+    faulthandler.enable(file=crash_fp, all_threads=True)
+    crash_fp.write("\n==== crash log start ====\n")
+    crash_fp.flush()
     try:
-        args = parse_args()
         dir_name, base_name = build_logger_and_paths(args)
         log_file = os.path.join(dir_name, base_name + ".log")
         if args.step == "all":
-            setup_pipeline_log(log_file, mode="w")
-            run_all(dir_name, base_name, args)
+            setup_step1_log(log_file, mode="w")
+            run_all(dir_name, base_name, args, log_file)
 
         # Step-specific requirements
-
-
         if args.step == "step1":
-            setup_pipeline_log(log_file, mode="w")
+            setup_step1_log(log_file, mode="w")
+            logging.info("%s", "*" * 80)
             if not args.pheno_file:
                 logging.error("STEP 1 requires --pheno-file.")
                 raise SystemExit(2)
@@ -346,7 +358,6 @@ def main():
                 logging.error("STEP 1 requires exactly ONE --sample file.")
                 raise SystemExit(2)
 
-        # convert list -> string for pybind GEMOptions
             args.bgen = args.bgen[0]
             args.sample = args.sample[0]
             confopt = build_conf_step1(args)
@@ -355,7 +366,7 @@ def main():
         elif args.step == "step2":
             setup_pipeline_log(log_file, mode="a")
             if len(args.bgen) != len(args.sample):
-                logging.error(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
+                print(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
                 raise SystemExit(2)
             for bgen_i, sample_i in zip(args.bgen, args.sample):
                 sub = argparse.Namespace(**vars(args))
@@ -372,13 +383,8 @@ def main():
             setup_pipeline_log(log_file, mode="a")
             for pq in args.parquet:
                 sub = argparse.Namespace(**vars(args))
-
-                # keep parquet as a single file for this run
                 sub.parquet = pq   # use string per run 
-
-                # output name: same stem, .txt
                 sub.out = str(Path(pq).with_suffix(".txt"))
-
                 print("*" * 80)
                 run_step3(sub)
 

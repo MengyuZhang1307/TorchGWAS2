@@ -245,6 +245,20 @@ FetchContent_Declare(fmt
 )
 FetchContent_MakeAvailable(fmt)
 
+#Fetch spdlog======================================================
+set(SPDLOG_FMT_EXTERNAL ON  CACHE BOOL "" FORCE)  # IMPORTANT: use fmt::fmt
+set(SPDLOG_BUILD_SHARED  OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_BENCH   OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_PIC     ON  CACHE BOOL "" FORCE) # IMPORTANT for Python .so
+
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.17.0
+)
+FetchContent_MakeAvailable(spdlog)
 #PYBIND11=================================================================
 set(PYBIND11_PYTHON_VERSION 3.11)
 set(ENV{LD_LIBRARY_PATH} "$ENV{HOME}/local/Python-3.11.6/")
@@ -440,6 +454,7 @@ target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")
 target_link_libraries(Mygen PRIVATE pybind11::module
                   fmt
+                  spdlog::spdlog
                   eigen
                   armadillo 
                   Boost::thread
