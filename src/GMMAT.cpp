@@ -1546,7 +1546,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     if(verbose)
     {
         std::cout << "****************************************************************************\n";
-        std::cout << "Start association test...\n \n";
+        std::cout << "Start fitting the null model...\n \n";
     }
     new_y.clear();
     fit_null = gf.convert_2_fit(); 

@@ -18,8 +18,8 @@ import tempfile
 from pathlib import Path
 import re
 import traceback
-import threading
-import atexit
+# import threading
+# import atexit
 import faulthandler
 
 
@@ -249,7 +249,7 @@ def run_all(dir_name, base_name, args, log_file):
     # ------------------
     if args.convert:
         print("*" * 80)
-        logging.info("STEP 3: Converting binary to text")
+        print("STEP 3: Converting binary to text")
         print("*" * 80)
         for bgen_i in args.bgen:
             base_i = safe_stem(bgen_i) + "_" + base_name
@@ -275,16 +275,15 @@ def run_step1(confopt, dir_name, base_name, args):
       -run_gwas(runner, correction, TGWAS_file, ...)
     """
     intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
-    print("STEP 1: fitting null model...")
-
     # 1) C++ init
     runner = GEMRunner(confopt.get())
 
     # 2) Null model
     runner.run_fit_nullmodel()
 
-    print(f"Intermediate file (correction) path: {intermediate_file}")    
- 
+    # print(f"Intermediate file (correction) path: {intermediate_file}")    
+    logging.info("Intermediate file (correction) path: %s", intermediate_file)
+
 def run_step2(confopt, dir_name, base_i, base_name, args):
     """
     STEP 2:
@@ -317,6 +316,7 @@ def run_step3(args):
         - output_file (text)
         - logger
     """
+    print("STEP 3: Converting binary to text")
     if not args.parquet:
         print("STEP 3 requires --parquet  (output of step2).")
         raise SystemExit(2)
@@ -348,6 +348,9 @@ def main():
         if args.step == "step1":
             setup_step1_log(log_file, mode="w")
             logging.info("%s", "*" * 80)
+            logging.info("STEP 1: fitting null model...")
+            if getattr(args, "convert", False):
+                logging.warning("--convert is only used with --step all. Ignoring it for --step step1.")
             if not args.pheno_file:
                 logging.error("STEP 1 requires --pheno-file.")
                 raise SystemExit(2)
@@ -365,6 +368,10 @@ def main():
 
         elif args.step == "step2":
             setup_pipeline_log(log_file, mode="a")
+            if getattr(args, "pheno_file", None):
+                print("WARNING: --pheno-file is not used in step2; ignoring it for --step step2.", file=sys.stderr)
+            if getattr(args, "convert", False):
+                print("WARNING: --convert is only used with --step all. Ignoring it for --step step2.", file=sys.stderr)
             if len(args.bgen) != len(args.sample):
                 print(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
                 raise SystemExit(2)
