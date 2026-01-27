@@ -264,13 +264,15 @@ def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
         return geno_mean, geno_std, t_stats, beta_coeffs, se
 
 
-def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device='cuda',  compress=False, regress_genotypes=True):
+def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device='cuda'):
     """
     Run GWAS using a pre-configured GEMRunner instance.
     """
     # dir_name = os.path.dirname(out_file)
     # base_name = os.path.basename(out_file)
     # intermediate_file = os.path.join(dir_name, "intermediate_" + base_name)
+    overall_start = time.time()
+
     ph_headers, c2_values, corrected_res, resid_sample_ids = read_correction_file(intermediate_file) # read corrected_res, c2, ph_headers and sample ids from intermediate file
     
     if device == 'cuda' and torch.cuda.is_available():
@@ -311,11 +313,12 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     buffer_size = 100_000
     cov_X, proj_A, J, has_dup = None, None, None, None
     start_readcov = time.time()
-    if regress_genotypes:
-        proj_A, cov_X, J, has_dup = calc_cov_proj(
-        runner.opt,
-        resid_sample_ids,
-        device)
+    
+    proj_A, cov_X, J, has_dup = calc_cov_proj(
+    runner.opt,
+    resid_sample_ids,
+    device)
+
     end_readcov = time.time()
     print(f"Time for reading covariate file and preparing projection = {end_readcov - start_readcov:.2f}s")
  
@@ -343,11 +346,41 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     if os.path.exists(TGWAS_file):
         os.remove(TGWAS_file)
 
-    start = time.time()
+    # ====================================================================
+    # PROFILING: Initialize timing accumulators
+    # ====================================================================
+    timing_stats = {
+        'first_chunk_wait': [],     # Time waiting for first chunk from C++ queue
+        'queue_wait': [],           # Time waiting for chunks from C++ queue
+        'data_transfer': [],        # Time to transfer data to GPU/CPU
+        'genotype_regression': [],  # Time for covariate regression on genotypes
+        'gwas_computation': [],     # Time for calc_t (core GWAS math)
+        'gpu_to_cpu': [],           # Time to transfer results back to CPU
+        'numpy_conversion': [],     # Time to convert to numpy arrays
+        'arrow_formatting': [],     # Time to create Arrow/Parquet structures
+        'io_write': [],             # Time for disk I/O (Parquet writing)
+        'total_per_chunk': []       # Total time per chunk
+    }
+    
+    chunk_count = 0
+    total_snps_processed = 0
+    
+    overall_start = time.time()
+    iteration_end = overall_start  # Track end of previous iteration for queue wait calculation
 
     for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
+        iteration_start = time.time()
+        # Queue wait = time from end of last iteration to start of this iteration
+        # Separate first chunk (includes C++ startup) from subsequent chunks
+        if chunk_count == 0:
+            timing_stats['first_chunk_wait'].append(iteration_start - iteration_end)
+        else:
+            timing_stats['queue_wait'].append(iteration_start - iteration_end)
+        
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
+        total_snps_processed += actual_snps
+        chunk_count += 1
 
         geno = geno_tensor[:actual_snps, :]
         beta = beta_tensor[:actual_snps, :]
@@ -356,8 +389,17 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         if chunk_data is None:
             raise ValueError("chunk_data is None")
 
+        # ---- Data Transfer ----
+        transfer_start = time.time()
         G = torch.as_tensor(chunk_data, dtype=torch.float32, device=device)  # (M, n)
+        if device.type == 'cuda':
+            torch.cuda.synchronize()  # Ensure transfer completes
+        transfer_end = time.time()
+        timing_stats['data_transfer'].append(transfer_end - transfer_start)
 
+        # ---- Genotype Regression ----
+        regression_start = time.time()
+        
         if has_dup:
             J = J.coalesce()
             Jt = J.transpose(0, 1).coalesce()              # (n_uniq, n_obs)
@@ -371,17 +413,36 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
             tmp = G @ JT_X                                 # (M, p)
             corr = tmp @ XTX_i_S                           # (M, n_uniq)
 
-            geno.copy_(GD - corr) / counts.unsqueeze(0)                         # (M, n_uniq)
+            geno.copy_((GD - corr) / counts.unsqueeze(0))                       # (M, n_uniq)
 
         else:
             coeffs = proj_A @ G.T
             fitted = cov_X @ coeffs
             geno.copy_(G - fitted.T)
+            
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        regression_end = time.time()
+        timing_stats['genotype_regression'].append(regression_end - regression_start)
         
+        # ---- GWAS Computation ----
+        gwas_start = time.time()
         mean, std, t_stats, beta_coeffs, se = calc_t(
             corrected_res, geno, beta, gamma, sqrt_c2, ph_std_pre
         )
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        gwas_end = time.time()
+        timing_stats['gwas_computation'].append(gwas_end - gwas_start)
 
+        # ---- GPU to CPU Transfer ----
+        gpu_to_cpu_start = time.time()
+        # beta_coeffs, se, t_stats are already on CPU from calc_t
+        gpu_to_cpu_end = time.time()
+        timing_stats['gpu_to_cpu'].append(gpu_to_cpu_end - gpu_to_cpu_start)
+
+        # ---- NumPy Conversion ----
+        numpy_start = time.time()
         b_np = beta_coeffs.cpu().numpy().astype(np.float32)
         se_np = se.cpu().numpy().astype(np.float32)
         neg_log10_pval = (
@@ -392,7 +453,11 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         # keep order: BETA, SE, PVAL repeating per phenotype
         all_stats = np.stack([b_np, se_np, neg_log10_pval], axis=2)
         all_stats_2d = all_stats.reshape(b_np.shape[0], -1)
+        numpy_end = time.time()
+        timing_stats['numpy_conversion'].append(numpy_end - numpy_start)
 
+        # ---- Arrow Formatting ----
+        arrow_start = time.time()
         # Convert metadata to Arrow arrays
         meta_arrays = []
         for k, v in meta.items():
@@ -405,15 +470,16 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
                 meta_arrays.append(pa.array(v, type=pa.float32()))
 
         # Convert numeric results to Arrow arrays
- 
         stat_arrays= [pa.array(col, type=pa.float32()) for col in all_stats_2d.T]
                         
-                    
         table= pa.table(meta_arrays + stat_arrays, names=headers)
         buffer.append(table)
+        arrow_end = time.time()
+        timing_stats['arrow_formatting'].append(arrow_end - arrow_start)
 
-        # flush buffer
+        # ---- Flush buffer ----
         if rows_in_buffer >= buffer_size:
+            io_start = time.time()
             combined = pa.concat_tables(buffer)
             # write Feather (Arrow IPC v2)
             # feather.write_feather(combined, out_path + ".feather", compression="zstd")
@@ -422,15 +488,25 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
                 TGWAS_file, combined.schema, compression="snappy"
             )
             writer.write_table(combined)
+            io_end = time.time()
+            timing_stats['io_write'].append(io_end - io_start)
+            
             rows_in_buffer = 0
             buffer.clear()
             del combined, b_np, se_np, neg_log10_pval,
             all_stats, all_stats_2d, table, stat_arrays, meta_arrays
             gc.collect()
-            torch.cuda.empty_cache()
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+        
+        # Update iteration_end at the very end of the iteration (after all processing including I/O)
+        iteration_end = time.time()
+        # timing_stats['queue_wait'].append(iteration_end - iteration_start)
+        timing_stats['total_per_chunk'].append(iteration_end - iteration_start)
 
     # --- Flush remaining ---
     if buffer:
+        io_start = time.time()
         combined = pa.concat_tables(buffer)
         # feather.write_feather(combined, out_path + ".feather", compression="zstd")
         if writer is None:
@@ -438,12 +514,128 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
                 TGWAS_file, combined.schema, compression="snappy"
             )
         writer.write_table(combined)
+        io_end = time.time()
+        timing_stats['io_write'].append(io_end - io_start)
+        
         buffer.clear()
         del combined, b_np, se_np, neg_log10_pval,
         all_stats, all_stats_2d, table, stat_arrays, meta_arrays
         gc.collect()
-        torch.cuda.empty_cache()
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
     if writer is not None:
         writer.close()
-    end = time.time()
-    print(f"time for calculating GWAS = {end - start:.2f}s")
+    
+    overall_end = time.time()
+    total_time = overall_end - overall_start
+    
+    # ====================================================================
+    # PROFILING: Print detailed timing statistics
+    # ====================================================================
+    print("\n" + "="*80)
+    print("                    PERFORMANCE PROFILING REPORT")
+    print("="*80)
+    print(f"\nDevice: {device.type.upper()}")
+    print(f"Total SNPs processed: {total_snps_processed:,}")
+    print(f"Number of chunks: {chunk_count}")
+    print(f"Average SNPs per chunk: {total_snps_processed / chunk_count:.1f}")
+    print(f"Total wall-clock time: {total_time:.2f}s")
+    print(f"SNPs per second: {total_snps_processed / total_time:.1f}")
+    
+    print("\n" + "-"*80)
+    print("TIMING BREAKDOWN (per chunk averages):")
+    print("-"*80)
+    
+    def print_timing(label, times):
+        if len(times) == 0:
+            return
+        total = sum(times)
+        mean = total / len(times)
+        pct = (total / total_time) * 100
+        print(f"{label:.<35} {mean*1000:8.2f} ms  (total: {total:6.2f}s, {pct:5.1f}%)")
+    # First chunk wait includes C++ thread startup time
+    if timing_stats['first_chunk_wait']:
+        first_wait = timing_stats['first_chunk_wait'][0]
+        first_pct = (first_wait / total_time) * 100
+        print(f"First chunk wait (C++ startup)..... {first_wait*1000:8.2f} ms  (total: {first_wait:6.2f}s, {first_pct:5.1f}%)")
+    
+    print_timing("Queue waiting time (chunks 2+)", timing_stats['queue_wait'])
+    print_timing("Data transfer to device", timing_stats['data_transfer'])
+    print_timing("Genotype regression", timing_stats['genotype_regression'])
+    print_timing("GWAS computation (calc_t)", timing_stats['gwas_computation'])
+    print_timing("GPU→CPU transfer", timing_stats['gpu_to_cpu'])
+    print_timing("NumPy conversion", timing_stats['numpy_conversion'])
+    print_timing("Arrow/Parquet formatting", timing_stats['arrow_formatting'])
+    if timing_stats['io_write']:
+        print_timing("Disk I/O (writes)", timing_stats['io_write'])
+    print_timing("Total timing per chunk", timing_stats['total_per_chunk'])
+    
+    # Compute derived metrics
+    print("\n" + "-"*80)
+    print("DERIVED METRICS:")
+    print("-"*80)
+    
+    # Python overhead = everything except queue wait and GWAS computation
+    python_overhead = (sum(timing_stats['data_transfer']) + 
+                      sum(timing_stats['numpy_conversion']) + 
+                      sum(timing_stats['arrow_formatting']))
+    python_overhead_pct = (python_overhead / total_time) * 100
+    print(f"Python overhead (data handling): {python_overhead:.2f}s ({python_overhead_pct:.1f}%)")
+    
+    # GPU/CPU compute time
+    compute_time = sum(timing_stats['gwas_computation'])
+    compute_time += sum(timing_stats['genotype_regression'])
+    compute_pct = (compute_time / total_time) * 100
+    print(f"{device.type.upper()} compute time: {compute_time:.2f}s ({compute_pct:.1f}%)")
+    
+    # Queue efficiency (including first chunk startup)
+    queue_wait = sum(timing_stats['queue_wait']) + sum(timing_stats['first_chunk_wait'])
+    queue_pct = (queue_wait / total_time) * 100
+    queue_wait_ongoing = sum(timing_stats['queue_wait'])  # Excluding first chunk
+    print(f"Queue waiting time (total): {queue_wait:.2f}s ({queue_pct:.1f}%)")
+    if timing_stats['first_chunk_wait']:
+        print(f"  - First chunk (startup): {sum(timing_stats['first_chunk_wait']):.2f}s")
+        print(f"  - Ongoing (chunks 2+): {queue_wait_ongoing:.2f}s")
+    
+    # I/O time
+    io_time = sum(timing_stats['io_write'])
+    io_pct = (io_time / total_time) * 100
+    print(f"Disk I/O time: {io_time:.2f}s ({io_pct:.1f}%)")
+    
+    # # Effective throughput
+    # actual_work_time = total_time - queue_wait
+    # if actual_work_time > 0:
+    #     effective_throughput = total_snps_processed / actual_work_time
+    #     print(f"Effective throughput (excluding queue wait): {effective_throughput:.1f} SNPs/s")
+    
+    print("\n" + "-"*80)
+    print("BOTTLENECK ANALYSIS:")
+    print("-"*80)
+    
+    components = {
+        'Queue waiting': queue_pct,
+        f'{device.type.upper()} compute': compute_pct,
+        'Python overhead': python_overhead_pct,
+        'Disk I/O': io_pct
+    }
+    
+    bottleneck = max(components.items(), key=lambda x: x[1])
+    print(f"Primary bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of total time)")
+    
+    if queue_wait_ongoing / (total_time - sum(timing_stats['first_chunk_wait'])) > 0.3:
+        print(" High ongoing queue waiting time - C++ dosage calculation is slower than Python processing")
+        print("  Consider: Increasing --threads for BGEN reading to speed up C++ side")
+    elif queue_pct > 30:
+        print(" High total queue waiting time (mostly first chunk startup)")
+        print("  This is normal - C++ threads need time to start and produce first chunk")
+    elif compute_pct > 60:
+        print(f" Good: Most time spent in {device.type.upper()} computation (efficient)")
+    elif python_overhead_pct > 40:
+        print(" High Python overhead - consider optimizing data conversion steps")
+    elif io_pct > 30:
+        print(" High I/O time - consider faster storage or different compression")
+    
+    print("\n  NOTE: Queue wait times should be similar between CPU and GPU runs,")
+    print("   since both consume from the same C++ producer thread.")
+    
+    print("="*80 + "\n")
