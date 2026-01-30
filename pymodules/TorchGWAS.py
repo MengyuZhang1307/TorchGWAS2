@@ -274,7 +274,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     overall_start = time.time()
 
     ph_headers, c2_values, corrected_res, resid_sample_ids = read_correction_file(intermediate_file) # read corrected_res, c2, ph_headers and sample ids from intermediate file
-    
+
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -319,6 +319,17 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     resid_sample_ids,
     device)
 
+    # Precompute duplicate-ID regression constants once per run
+    Jt = JT_X = XTX_i_S = counts = None
+    if has_dup:
+        J = J.coalesce()
+        Jt = J.transpose(0, 1).coalesce()              # (n_uniq, n_obs)
+        JT_X = torch.sparse.mm(Jt, cov_X)              # (n_uniq, p)
+        S = JT_X.T                                     # (p, n_uniq)
+        XTX = cov_X.T @ cov_X                          # (p, p)
+        XTX_i_S = torch.linalg.solve(XTX, S)           # (p, n_uniq)
+        counts = torch.sparse.sum(J, dim=0).to_dense() # (n_uniq,)
+
     end_readcov = time.time()
     print(f"Time for reading covariate file and preparing projection = {end_readcov - start_readcov:.2f}s")
  
@@ -359,7 +370,8 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         'numpy_conversion': [],     # Time to convert to numpy arrays
         'arrow_formatting': [],     # Time to create Arrow/Parquet structures
         'io_write': [],             # Time for disk I/O (Parquet writing)
-        'total_per_chunk': []       # Total time per chunk
+        'total_per_chunk': [],       # Total time per chunk
+        'queue_size': [],            # Number of chunks in queue
     }
     
     chunk_count = 0
@@ -376,6 +388,10 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
             timing_stats['first_chunk_wait'].append(iteration_start - iteration_end)
         else:
             timing_stats['queue_wait'].append(iteration_start - iteration_end)
+        
+        # Track queue size (number of chunks currently in queue)
+        current_queue_size = queue.size()
+        timing_stats['queue_size'].append(current_queue_size)
         
         actual_snps = chunk_data.shape[0]
         rows_in_buffer += actual_snps
@@ -401,19 +417,11 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         regression_start = time.time()
         
         if has_dup:
-            J = J.coalesce()
-            Jt = J.transpose(0, 1).coalesce()              # (n_uniq, n_obs)
-            JT_X = torch.sparse.mm(Jt, cov_X)       # only supports(sp*dens) (n_uniq, p)
-            S = JT_X.T                                     # (p, n_uniq)
-
-            XTX = cov_X.T @ cov_X                          # (p, p)
-            XTX_i_S = torch.linalg.solve(XTX, S)           # (p, n_uniq)
-            counts = torch.sparse.sum(J, dim=0).to_dense() # (n_uniq,)
-            GD = G * counts.unsqueeze(0)                       # (M, n_uniq)
+            GD = G * counts.unsqueeze(0)                   # (M, n_uniq)
             tmp = G @ JT_X                                 # (M, p)
             corr = tmp @ XTX_i_S                           # (M, n_uniq)
 
-            geno.copy_((GD - corr) / counts.unsqueeze(0))                       # (M, n_uniq)
+            geno.copy_(GD - corr) / counts.unsqueeze(0)                      # (M, n_uniq)
 
         else:
             coeffs = proj_A @ G.T
@@ -596,6 +604,18 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     if timing_stats['first_chunk_wait']:
         print(f"  - First chunk (startup): {sum(timing_stats['first_chunk_wait']):.2f}s")
         print(f"  - Ongoing (chunks 2+): {queue_wait_ongoing:.2f}s")
+    
+    # Queue size statistics
+    if timing_stats['queue_size']:
+        queue_sizes = timing_stats['queue_size']
+        avg_queue_size = sum(queue_sizes) / len(queue_sizes)
+        max_queue_size = max(queue_sizes)
+        min_queue_size = min(queue_sizes)
+        print(f"Queue size statistics:")
+        print(f"  - Average chunks in queue: {avg_queue_size:.2f}")
+        print(f"  - Min chunks in queue: {min_queue_size}")
+        print(f"  - Max chunks in queue: {max_queue_size}")
+        print(f"  - Queue capacity: {queue.capacity()}")
     
     # I/O time
     io_time = sum(timing_stats['io_write'])

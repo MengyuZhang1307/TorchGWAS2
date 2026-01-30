@@ -82,8 +82,9 @@ PYBIND11_MODULE(Mygen, m)
                     // Copy required state so the thread doesn't depend on GEMRunner lifetime.
                     auto bgen_copy = self.bgen; // shallow copy; calc_dosage opens its own FILE handles
                     auto geno_file = self.opt.geno_add;
-                    std::thread([q, bgen_copy, geno_file, snps_per_chunk]() mutable {
-                        calc_dosage(geno_file, bgen_copy, *q, snps_per_chunk);
+                    auto threads = self.opt.threads;
+                    std::thread([q, bgen_copy, geno_file, threads, snps_per_chunk]() mutable {
+                        calc_dosage(geno_file, bgen_copy, *q, threads, snps_per_chunk);
                     }).detach();
                     return DosageStream(q);
                 },
@@ -95,8 +96,9 @@ PYBIND11_MODULE(Mygen, m)
                     auto q = std::make_shared<BoundedChunkQueue>(queue_capacity);
                     auto bgen_copy = self.bgen;
                     auto geno_file = self.opt.geno_add;
-                    std::thread([q, bgen_copy, geno_file, snps_per_chunk]() mutable {
-                        calc_dosage(geno_file, bgen_copy, *q, snps_per_chunk);
+                    auto threads = self.opt.threads;
+                    std::thread([q, bgen_copy, geno_file, threads, snps_per_chunk]() mutable {
+                        calc_dosage(geno_file, bgen_copy, *q, threads, snps_per_chunk);
                     }).detach();
                     return DosageStream(q);
                 },
@@ -106,6 +108,14 @@ PYBIND11_MODULE(Mygen, m)
     // Python-visible stream wrapper; keeps queue internal.
     py::class_<DosageStream>(m, "DosageStream")
         .def("close", [](DosageStream& s){ if (s.q) s.q->close(); })
+        .def("size", [](DosageStream& s) -> std::size_t {
+            if (!s.q) return 0;
+            return s.q->size();
+        })
+        .def("capacity", [](DosageStream& s) -> std::size_t {
+            if (!s.q) return 0;
+            return s.q->capacity();
+        })
         .def("__iter__", [](DosageStream& self) -> DosageStream& { return self; }, py::return_value_policy::reference_internal)
         .def("__next__", [](DosageStream& s) -> py::tuple {
             if (!s.q) throw py::stop_iteration();
