@@ -698,16 +698,6 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 const int begin = (int)bgen.Mbgen_begin[b];
                 const int block_cap = end - begin + 1;   // inclusive end => +1
                  
-
-                if (b == n_blocks - 1 ) {
-                std::cerr << "block=" << b
-                            << "n_blocks= " << n_blocks
-                            << " begin=" << begin
-                            << " end=" << end
-                            << " block_cap=" << block_cap
-                            << " snps_per_chunk=" << snps_per_chunk
-                            << "\n";
-                        }
                 std::shared_ptr<float> chunk_buf;
                 Chunk current_chunk;
                 int row_in_chunk = 0;
@@ -1036,8 +1026,8 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 }
                 auto end_time = std::chrono::high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-                std::cout << "Thread " << b << " finished in ";
-                std::cout << "Elapsed time: " << duration.count() << " ms\n";
+                // std::cout << "Thread " << b << " finished in ";
+                // std::cout << "Elapsed time: " << duration.count() << " ms\n";
             }
         });
     }
