@@ -600,19 +600,6 @@ void Bgen::process_bgen_header_block(std::string bgenfile)
 // }
 
 
-
-struct OrderGuard 
-{
-  std::atomic<int>& counter;
-  std::condition_variable& cv;
-  std::unique_lock<std::mutex>& lk;
-  ~OrderGuard() {
-    counter.fetch_add(1);
-    lk.unlock();
-    cv.notify_all();
-  }
-};
-
 void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& queue,  int threads, int snps_per_chunk)
 {
     const int sam_size = bgen.new_samSize;
@@ -695,8 +682,6 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 fseek(fin.get(), static_cast<long>(bgen.bgenVariantPos[b]), SEEK_SET);
                 uint snploop = bgen.Mbgen_begin[b];
                 const uint end = bgen.Mbgen_end[b];
-                const int begin = (int)bgen.Mbgen_begin[b];
-                const int block_cap = end - begin + 1;   // inclusive end => +1
                  
                 std::shared_ptr<float> chunk_buf;
                 Chunk current_chunk;
