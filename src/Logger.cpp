@@ -54,7 +54,6 @@ void LoggerSetup::init(const std::string& filename)
 {
     fs::path log_path(filename);                            // convert string → path
     fs::path log_dir = log_path.parent_path();            
-    // fs::path log_name = filename.filename();   
     fs::path log_name = log_path.stem();           
     log_path = log_dir / (log_name.string() + "_fit_model.log");    
     

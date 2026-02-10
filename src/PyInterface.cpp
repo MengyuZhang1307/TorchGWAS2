@@ -108,6 +108,7 @@ PYBIND11_MODULE(Mygen, m)
     // Python-visible stream wrapper; keeps queue internal.
     py::class_<DosageStream>(m, "DosageStream")
         .def("close", [](DosageStream& s){ if (s.q) s.q->close(); })
+        .def("__del__", [](DosageStream& s){ if (s.q) s.q->close(); })
         .def("size", [](DosageStream& s) -> std::size_t {
             if (!s.q) return 0;
             return s.q->size();

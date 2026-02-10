@@ -1,4 +1,5 @@
 #include "ReadBGEN.h"
+#include "Logger.h"
 #include <thread>
 #include <atomic>
 #include <limits>
@@ -194,410 +195,6 @@ void Bgen::process_bgen_header_block(std::string bgenfile)
  * @param queue
  * @param snp_per_chunk
  */
-// Orchestrator: determine thread count from queue capacity and stream batched chunks without extra copies
-// void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& queue, int snps_per_chunk)
-// {
-//     const int sam_size = bgen.new_samSize;
-//     if (snps_per_chunk <= 0) snps_per_chunk = 1000;
-
-//     int threads = static_cast<int>(queue.capacity());
-//     if (threads <= 0) threads = 1;
-
-//     // Partition work across threads using existing helper
-//     bgen.get_position_bgen_variant(threads, std::string(), bgen.filterVariants);
-
-//     std::atomic<bool> stop{false};
-//     // Enforce ordered pushing: only thread `next_thread_to_push` may push.
-//     // std::atomic<int> next_thread_to_push{0};
-//     // std::mutex order_mtx;
-//     // std::condition_variable order_cv;
-//     std::vector<std::thread> workers;
-//     workers.reserve(static_cast<size_t>(threads));
-
-//     for (int t = 0; t < threads; ++t) 
-//     {
-//         workers.emplace_back([&, t]() 
-//         {
-//             double MAF = 0.001;
-//             double maxMAF = 1 - MAF;
-//             auto start_time = std::chrono::high_resolution_clock::now();
-
-//             const uint Nbgen  = bgen.Nbgen;
-//             const uint Layout = bgen.Layout;
-//             const uint CompressedSNPBlocks = bgen.CompressedSNPBlocks;
-//             const bool filterVariants = bgen.filterVariants;
-//             const std::vector<long int>& include_idx = bgen.include_idx;
-
-//             constexpr uint maxLA = 65536;
-//             std::vector<char> snpID(maxLA + 1), rsID(maxLA + 1), chrStr(maxLA + 1), allele1(maxLA + 1), allele0(maxLA + 1);
-//             // Work buffers
-//             std::vector<uchar> zBuf, shortBuf, zBuf1;
-//             std::vector<uint16_t> shortBuf1;
-//             const uLongf destLen1 = 6 * Nbgen; // for Layout 1
-//             if (Layout == 1) 
-//             {
-//                 if (CompressedSNPBlocks == 0) zBuf1.resize(destLen1); else shortBuf1.resize(destLen1);
-//             }
-            
-//             // Decompressors and file
-//             struct DecompDel 
-//             { 
-//                 void operator()(libdeflate_decompressor* p) const noexcept 
-//                 { 
-//                     if (p) libdeflate_free_decompressor(p); 
-//                 } 
-//             };
-//             std::unique_ptr<libdeflate_decompressor, DecompDel> decompressor(libdeflate_alloc_decompressor());
-//             std::unique_ptr<FILE, decltype(&fclose)> fin(fopen(bgenFile.c_str(), "rb"), &fclose);
-//             if (!fin) { stop = true; return; }
-            
-//             // Seek to thread's start
-//             fseek(fin.get(), static_cast<long>(bgen.bgenVariantPos[t]), SEEK_SET);
-//             uint snploop = bgen.Mbgen_begin[t];
-//             const uint end = bgen.Mbgen_end[t];
-//             int keepIndex = 0;
-//             int ret;
-            
-//             // Allocate initial chunk buffer
-//             std::shared_ptr<float> chunk_buf(new (std::nothrow) float[static_cast<size_t>(snps_per_chunk) * static_cast<size_t>(sam_size)], std::default_delete<float[]>());
-//             if (!chunk_buf) { stop = true; return; }
-//             int row_in_chunk = 0;
-//             const float nanv = std::numeric_limits<float>::quiet_NaN();
-            
-//             Chunk current_chunk;
-//             current_chunk.data = chunk_buf;
-//             current_chunk.cols = static_cast<std::size_t>(sam_size);
-//             current_chunk.snpid.reserve(snps_per_chunk);
-//             current_chunk.rsid.reserve(snps_per_chunk);
-//             current_chunk.chr.reserve(snps_per_chunk);
-//             current_chunk.pos.reserve(snps_per_chunk);
-//             current_chunk.allele1.reserve(snps_per_chunk);
-//             current_chunk.allele0.reserve(snps_per_chunk);
-//             current_chunk.n_samples.reserve(snps_per_chunk);
-
-//             while (!stop && snploop <= end) 
-//             {
-//                 double gsqmean = 0;
-//                 int stream_i = 0;
-//                 if (Layout == 1) 
-//                 {
-//                     uint Nrow; ret = fread(&Nrow, 4, 1, fin.get());
-//                     if (Nrow != Nbgen) { stop = true; break; }
-//                 }
-                
-//                 ushort LS; ret = fread(&LS, 2, 1, fin.get()); ret = fread(snpID.data(), 1, LS, fin.get()); snpID[LS] = '\0';
-//                 ushort LR; ret = fread(&LR, 2, 1, fin.get()); ret = fread(rsID.data(), 1, LR, fin.get()); rsID[LR] = '\0';
-//                 ushort LC; ret = fread(&LC, 2, 1, fin.get()); ret = fread(chrStr.data(), 1, LC, fin.get()); chrStr[LC] = '\0';
-//                 uint32_t physpos; 
-//                 std::vector <double> AF(snps_per_chunk);
-//                 std::string physpos_tmp;
-//                 ret = fread(&physpos, 4, 1, fin.get()); 
-//                 physpos_tmp = std::to_string(physpos);
-                
-//                 if (Layout == 2) {
-//                     uint16_t LKnum; ret = fread(&LKnum, 2, 1, fin.get());
-//                     if (LKnum != 2) { stop = true; break; }
-//                 }
-                
-//                 uint32_t LA; ret = fread(&LA, 4, 1, fin.get()); ret = fread(allele1.data(), 1, LA, fin.get()); allele1[LA] = '\0';
-//                 uint32_t LB; ret = fread(&LB, 4, 1, fin.get()); ret = fread(allele0.data(), 1, LB, fin.get()); allele0[LB] = '\0';
-                
-//                 // Write directly into the current row
-//                 // float* row_ptr = chunk_buf.get() + static_cast<size_t>(row_in_chunk) * static_cast<size_t>(sam_size);
-//                 float* row_ptr = chunk_buf.get() + row_in_chunk * sam_size;
-//                 std::fill(row_ptr, row_ptr + sam_size, nanv);
-//                 std::size_t nobs = 0;
-//                 uint nmiss = 0;
-
-//                 if (Layout == 1) 
-//                 {
-//                     uint16_t* probs_start;
-//                     if (CompressedSNPBlocks == 1) 
-//                     {
-//                         uint zLen; ret = fread(&zLen, 4, 1, fin.get()); zBuf1.resize(zLen);
-//                         ret = fread(&zBuf1[0], 1, zLen, fin.get());
-//                         if (libdeflate_zlib_decompress(decompressor.get(), &zBuf1[0], zLen, &shortBuf1[0], destLen1, NULL) != LIBDEFLATE_SUCCESS) { stop = true; break; }
-//                         probs_start = &shortBuf1[0];
-//                     } 
-//                     else 
-//                     {
-//                         ret = fread(&zBuf1[0], 1, destLen1, fin.get()); 
-//                         probs_start = reinterpret_cast<uint16_t*>(&zBuf1[0]);
-//                     }
-//                     const double scale = 1.0 / 32768; 
-                        
-//                     for (uint i = 0; i < Nbgen; ++i)
-//                     {
-//                         int out = bgen.bgen_to_out[i];   // -1 if excluded
-//                         if (out < 0) continue;           // not in output (missing cov, not in order list, etc.)
-
-//                         double p11 = probs_start[3 * i] * scale;
-//                         double p10 = probs_start[3 * i + 1] * scale;
-//                         double p00 = probs_start[3 * i + 2] * scale;
-//                         nobs++;
-//                         // BGEN layout1 sometimes uses (0,0,0) as missing
-//                         if (!(p11 == 0.0 && p10 == 0.0 && p00 == 0.0))
-//                         {
-//                             double pTot = p11 + p10 + p00;
-//                             if (pTot > 0.0) 
-//                             {
-//                                 float dosage = static_cast<float>((2.0 * p00 + p10) / pTot);
-//                                 row_ptr[out] = dosage;
-//                                 AF[stream_i] += dosage;
-//                                 gsqmean += dosage * dosage;
-//                             } 
-//                             else 
-//                             {
-//                                 row_ptr[out] = nanv;
-//                                 nmiss++;
-//                             }
-//                         }
-//                         else
-//                         {
-//                             row_ptr[out] = nanv;
-//                             nmiss++;
-//                         }
-//                     }
-//                 } 
-//                 else 
-//                 { 
-//                     // Layout 2
-//                     uint zLen; ret = fread(&zLen, 4, 1, fin.get());
-//                     // Filtering semantics: use +1 offset like the original calc_dosage
-//                     if (filterVariants && bgen.keepVariants.size() > static_cast<size_t>(t) && keepIndex < static_cast<int>(bgen.keepVariants[t].size()) && bgen.keepVariants[t][keepIndex] + 1 != snploop) 
-//                     {
-//                         // skip block payload
-//                         if (CompressedSNPBlocks > 0) fseek(fin.get(), 4 + zLen - 4, SEEK_CUR); else fseek(fin.get(), zLen, SEEK_CUR);
-//                         snploop++;
-//                         continue;
-//                     }
-
-//                     uint DLen; uchar* bufAt;
-//                     if (CompressedSNPBlocks == 1) 
-//                     {
-//                         zBuf.resize(zLen - 4);
-//                         ret = fread(&DLen, 4, 1, fin.get()); 
-//                         ret = fread(&zBuf[0], 1, zLen - 4, fin.get());
-//                         shortBuf.resize(DLen); 
-//                         uLongf destLen = DLen;
-//                         if (libdeflate_zlib_decompress(decompressor.get(), &zBuf[0], zLen - 4, &shortBuf[0], destLen, NULL) != LIBDEFLATE_SUCCESS) { stop = true; break; }
-//                         bufAt = &shortBuf[0];
-//                     } 
-//                     else if (CompressedSNPBlocks == 2) 
-//                     {
-//                         zBuf.resize(zLen - 4);
-//                         ret = fread(&DLen, 4, 1, fin.get()); 
-//                         ret = fread(&zBuf[0], 1, zLen - 4, fin.get());
-//                         shortBuf.resize(DLen); 
-//                         uLongf destLen = DLen;
-//                         size_t dret = ZSTD_decompress(&shortBuf[0], destLen, &zBuf[0], zLen - 4);
-//                         if (ZSTD_isError(dret)) { stop = true; break; }
-//                         bufAt = &shortBuf[0];
-//                     } 
-//                     else 
-//                     {
-//                         zBuf.resize(zLen); ret = fread(&zBuf[0], 1, zLen, fin.get()); bufAt = &zBuf[0];
-//                     }
-
-//                     uint32_t N; std::memcpy(&N, bufAt, sizeof(int32_t)); if (N != Nbgen) { stop = true; break; }
-//                     uint16_t K; std::memcpy(&K, &(bufAt[4]), sizeof(int16_t)); if (K != 2U) { stop = true; break; }
-//                     const uint32_t min_ploidy = bufAt[6]; if (min_ploidy != 2U) { stop = true; break; }
-//                     const uint32_t max_ploidy = bufAt[7]; if (max_ploidy != 2U) { stop = true; break; }
-
-//                     const unsigned char* missing_and_ploidy_info = &(bufAt[8]);
-//                     const unsigned char* probs_start = &(bufAt[10 + N]);
-//                     const uint32_t is_phased = probs_start[-2]; if (is_phased != 1 && is_phased != 0) { stop = true; break; }
-//                     const uint32_t bit_precision = probs_start[-1]; if (bit_precision != 8 && bit_precision != 16 && bit_precision != 24 && bit_precision != 32) { stop = true; break; }
-//                     const uintptr_t numer_mask = (1U << bit_precision) - 1; const uintptr_t probs_offset = bit_precision / 8;
-
-//                     // int idx_k = 0;
-                  
-//                     if (!is_phased)
-//                     {
-//                         for (uint32_t i = 0; i < N; ++i)
-//                         {
-//                             int out = bgen.bgen_to_out[i];          // -1 => excluded
-
-//                             const uint32_t mp = missing_and_ploidy_info[i];
-
-//                             if (mp == 130)
-//                             {
-//                                 // must still consume bytes for this sample
-//                                 probs_start += (probs_offset * 2);
-
-//                                 // only write/count if included
-//                                 if (out >= 0) { row_ptr[out] = nanv; nmiss++; }
-//                                 nobs++;
-//                                 continue;
-//                             }
-
-//                             if (mp != 2) { stop = true; break; }
-//                             nobs++;
-//                             // mp == 2: decode two values, and advance pointer (always)
-//                             uintptr_t numer_aa = 0, numer_ab = 0;
-//                             bgen13_get_two_vals(probs_start, bit_precision, probs_offset, &numer_aa, &numer_ab);
-//                             probs_start += (probs_offset * 2);
-
-//                             if (out < 0) continue;                  // excluded: skip store/count
-
-//                             double p11 = numer_aa / double(numer_mask);
-//                             double p10 = numer_ab / double(numer_mask);
-//                             float dosage = static_cast<float>(2.0 * (1.0 - p11 - p10) + p10);
-//                             row_ptr[out] = dosage;
-//                             AF[stream_i] += dosage;
-//                             gsqmean += dosage * dosage;
-//                             // nobs++;
-//                         }
-//                     }
-//                     else  // is_phased == true
-//                     {
-//                         for (uint32_t i = 0; i < N; ++i)
-//                         {
-//                             int out = bgen.bgen_to_out[i];          // -1 => excluded
-//                             const uint32_t mp = missing_and_ploidy_info[i];
-
-//                             if (mp == 130)
-//                             {
-//                                 // still consume bytes/slots
-//                                 probs_start += (probs_offset * 2);
-
-//                                 if (out >= 0) { row_ptr[out] = nanv; nmiss++; }
-//                                 nobs++;
-//                                 continue;
-//                             }
-
-//                             if (mp != 2) { stop = true; break; }
-//                             nobs++;
-//                             uintptr_t numer_aa = 0, numer_ab = 0;
-//                             bgen13_get_two_vals(probs_start, bit_precision, probs_offset, &numer_aa, &numer_ab);
-//                             probs_start += (probs_offset * 2);
-
-//                             if (out < 0) continue;                  // excluded
-
-//                             double p11 = numer_aa / double(numer_mask);
-//                             double p10 = numer_ab / double(numer_mask);
-
-//                             float dosage = static_cast<float>(2.0 - (p11 + p10));  // your phased formula
-//                             row_ptr[out] = dosage;
-//                             AF[stream_i] += dosage;
-//                             gsqmean += dosage * dosage;
-//                             // nobs++;
-//                         }
-//                     }
-
-//                     if (filterVariants) keepIndex++;
-//                 }
-
-//                 double gmean  = AF[stream_i] / double(sam_size - nmiss);
-//                 gsqmean /= static_cast<double>(sam_size - nmiss);
-//                 double cur_AF = gmean / 2.0 ;
-//                 double gvar = (gsqmean - gmean * gmean) * static_cast<double>(sam_size - nmiss) / static_cast<double>(sam_size - nmiss - 1);
-
-//                 if ((cur_AF < MAF || cur_AF > maxMAF) ) 
-//                 { 
-//                     AF[stream_i] = 0.0;
-//                     snploop++;
-//                     stream_i++;
-//                     continue;
-//                 }
-//                 else 
-//                 {
-//                     AF[stream_i] = cur_AF;
-//                 }
-
-//                 // Pad remaining columns with NaN to fixed width
-//                 for (std::size_t c = nobs; c < static_cast<std::size_t>(sam_size); ++c) row_ptr[c] = nanv;
-//                 row_in_chunk++;
-                
-//                 current_chunk.snpid.push_back(
-//                     LS > 0 ? trim_null(snpID.data(), 65536) : "NA"
-//                 );
-//                 current_chunk.rsid.push_back(
-//                     LR > 0 ? trim_null(rsID.data(), 65536) : "NA"
-//                 );
-//                 current_chunk.chr.push_back(
-//                     LC > 0 ? trim_null(chrStr.data(), 65536) : "-1"
-//                 );
-//                 current_chunk.pos.push_back(physpos_tmp);
-//                 current_chunk.allele1.push_back(
-//                     trim_null(allele1.data(), 65536)
-//                 );
-//                 current_chunk.allele0.push_back(
-//                     trim_null(allele0.data(), 65536)
-//                 );
-//                 current_chunk.n_samples.push_back(std::to_string(sam_size - nmiss));
-//                 current_chunk.af.push_back(cur_AF);
-//                 current_chunk.gv.push_back(gvar);
-
-
-//                 if (row_in_chunk == snps_per_chunk) 
-//                 {
-//                     // // Wait until it's this thread's turn to push
-//                     // {
-//                     //     std::unique_lock<std::mutex> lk(order_mtx);
-//                     //     order_cv.wait(lk, [&]{ return stop || next_thread_to_push.load() == t; });
-//                     // }
-                
-//                     current_chunk.data = chunk_buf; 
-//                     current_chunk.rows = row_in_chunk; 
-//                     current_chunk.cols = static_cast<std::size_t>(sam_size);
-//                     if (!queue.push(std::move(current_chunk))) 
-//                     { 
-//                         stop = true; 
-//                         break; 
-//                     }
-//                     chunk_buf.reset(new (std::nothrow) float[static_cast<size_t>(snps_per_chunk) * static_cast<size_t>(sam_size)], std::default_delete<float[]>());
-//                     if (!chunk_buf) { stop = true; break; }
-//                     row_in_chunk = 0;
-
-//                     current_chunk.snpid.clear();
-//                     current_chunk.rsid.clear();
-//                     current_chunk.chr.clear();
-//                     current_chunk.pos.clear();
-//                     current_chunk.allele0.clear();
-//                     current_chunk.allele1.clear();
-//                     current_chunk.n_samples.clear();
-//                     current_chunk.af.clear();
-//                     current_chunk.gv.clear();
-//                 }
-                
-//                 snploop++;
-//                 stream_i++;
-//             }
-
-//             // Flush remaining rows
-//             if (!stop && row_in_chunk > 0) 
-//             {
-//                 // {
-//                 //     std::unique_lock<std::mutex> lk(order_mtx);
-//                 //     order_cv.wait(lk, [&]{ return stop || next_thread_to_push.load() == t; });
-//                 // }
-                
-//                 current_chunk.data = chunk_buf; 
-//                 current_chunk.rows = row_in_chunk; 
-//                 current_chunk.cols = static_cast<std::size_t>(sam_size);
-//                 (void)queue.push(std::move(current_chunk));
-//             }
-
-//             // // Handoff to next thread when this thread finished pushing
-//             // {
-//             //     std::unique_lock<std::mutex> lk(order_mtx);
-//             //     // If this thread produced no chunks, it still must wait for its turn
-//             //     order_cv.wait(lk, [&]{ return stop || next_thread_to_push.load() == t; });
-//             //     next_thread_to_push.fetch_add(1);
-//             // }
-//             // order_cv.notify_all();
-
-//             auto end_time = std::chrono::high_resolution_clock::now();
-//             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-//             std::cout << "Thread " << t << " finished in ";
-//             std::cout << "Elapsed time: " << duration.count() << " ms\n";
-//         });
-//     }
-
-//     for (auto& th : workers) th.join();
-//     queue.close();
-// }
 
 
 void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& queue,  int threads, int snps_per_chunk)
@@ -619,9 +216,9 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
 
     auto fail = [&]()
     {
-    stop.store(true, std::memory_order_release);
-    order_cv.notify_all();
-    // queue.close();
+        stop.store(true, std::memory_order_release);
+        order_cv.notify_all();
+        queue.close();
     };
 
     
@@ -634,7 +231,7 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
         {
             double MAF = 0.001;
             double maxMAF = 1 - MAF;
-            auto start_time = std::chrono::high_resolution_clock::now();
+            // auto start_time = std::chrono::high_resolution_clock::now();
 
             const uint Nbgen  = bgen.Nbgen;
             const uint Layout = bgen.Layout;
@@ -672,13 +269,9 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 int keepIndex = 0;
                 int b = next_block.fetch_add(1);
                 if (b >= n_blocks) break;
-
                 bool have_turn = false;
-                
-                
 
-
-            // now this worker handles block b
+                // now this worker handles block b
                 fseek(fin.get(), static_cast<long>(bgen.bgenVariantPos[b]), SEEK_SET);
                 uint snploop = bgen.Mbgen_begin[b];
                 const uint end = bgen.Mbgen_end[b];
@@ -688,11 +281,33 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                 int row_in_chunk = 0;
                 const float nanv = std::numeric_limits<float>::quiet_NaN();
                 
+                // auto wait_turn = [&]() -> bool {
+                //     if (have_turn) return true;
+
+                //     std::unique_lock<std::mutex> lk(order_mtx);
+
+                //     while (!stop.load(std::memory_order_relaxed) &&
+                //         next_to_push.load(std::memory_order_acquire) != b)
+                //     {
+                //         // Wake up every 10 seconds (or earlier on notify), then re-check the condition
+                //         order_cv.wait_for(lk, std::chrono::seconds(1));
+                //     }
+
+                //     if (stop.load(std::memory_order_relaxed)) {
+                //         return false;
+                //     }
+
+                //     have_turn = true;
+                //     return true;
+                // };
                 auto wait_turn = [&]() -> bool {
                     if (have_turn) return true;
                     std::unique_lock<std::mutex> lk(order_mtx);
-                    order_cv.wait(lk, [&]{ return stop.load() || next_to_push.load() == b; });
-                    if (stop.load()) return false;
+                    order_cv.wait(lk, [&]{ return stop.load(std::memory_order_relaxed) || next_to_push.load(std::memory_order_acquire) == b; });
+                    if (stop.load(std::memory_order_relaxed)) 
+                    {
+                        return false;
+                    }
                     have_turn = true;
                     return true; // lk unlocks here
                 };
@@ -728,6 +343,7 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                     if (!wait_turn()) return false;
                     if (!queue.push(std::move(current_chunk))) 
                     {    // move current_chunk away
+                        spdlog::error("PUSH FAILED at block {}", b);
                         fail();
                         return false;
                     }
@@ -992,27 +608,35 @@ void calc_dosage(const std::string& bgenFile, Bgen &bgen, BoundedChunkQueue& que
                     ++snploop;
                     ++row_in_chunk;
                     current_chunk.rows = row_in_chunk; 
-                    // pushed_rows += current_chunk.rows;
                     if (row_in_chunk == snps_per_chunk)
+                    {
+                        if (!push_chunk()) 
                         {
-                             if (!push_chunk()) break; 
-                             if (!init_chunk()) break;   
+                            fail();
+                            return;
                         }
+                        if (!init_chunk()) break;   
+                    }
                 }
-                if (!stop.load() && row_in_chunk > 0)
+
+                // if (!stop.load() && row_in_chunk > 0)
+                if (row_in_chunk > 0)
                 {
-                    if (!push_chunk()) break; 
+                    if (!push_chunk()) 
+                    {
+                        fail();
+                        return;
+                    }
                 }
-                
-                if (have_turn) 
+   
+                // If never meet the condition to push a chunk
+                if (!have_turn) 
                 {
-                    next_to_push.fetch_add(1);//release the turn for the NEXT BLOCK
-                    order_cv.notify_all();
+                    std::cout << "stopped" << std::endl;
+                    if (!wait_turn()) return;   // if stop==true, exit; others will wake up
                 }
-                auto end_time = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-                // std::cout << "Thread " << b << " finished in ";
-                // std::cout << "Elapsed time: " << duration.count() << " ms\n";
+                next_to_push.fetch_add(1);
+                order_cv.notify_all();
             }
         });
     }

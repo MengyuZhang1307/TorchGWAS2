@@ -2,8 +2,8 @@
 
 ARG BASE_IMAGE=nvidia/cuda:12.4.0-runtime-ubuntu22.04
 # Stage 1 Use Ubuntu 22.04 as base
-FROM ubuntu:22.04 AS builder
-
+#FROM ubuntu:22.04 AS builder
+FROM ${BASE_IMAGE} AS builder
 # Required for noninteractive installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -52,22 +52,24 @@ RUN apt-get update && apt-get install -y \
     libboost-program-options-dev \
     libgmp-dev libmpfr-dev pkg-config
 
-# Install Eigen
-RUN cd /tmp && \
-wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz && \
-tar -xf eigen-3.4.0.tar.gz && \
-cp -r eigen-3.4.0/Eigen /usr/local/include/ && \
-rm -rf *
+# # Install Eigen
+# RUN cd /tmp && \
+# wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz && \
+# tar -xf eigen-3.4.0.tar.gz && \
+# cp -r eigen-3.4.0/Eigen /usr/local/include/ && \
+# rm -rf *
 
-# Install Armadillo
-RUN cd /tmp && \
-    wget https://gitlab.com/conradsnicta/armadillo-code/-/archive/14.0.1/armadillo-code-14.0.1.tar.gz && \
-    tar -xf armadillo-code-14.0.1.tar.gz && \
-    cp -r armadillo-code-14.0.1/include /usr/local/include/armadillo && \
-    rm -rf /tmp/*
+# # Install Armadillo
+# RUN cd /tmp && \
+#     wget https://gitlab.com/conradsnicta/armadillo-code/-/archive/14.0.1/armadillo-code-14.0.1.tar.gz && \
+#     tar -xf armadillo-code-14.0.1.tar.gz && \
+#     cp -r armadillo-code-14.0.1/include /usr/local/include/armadillo && \
+#     rm -rf /tmp/*
 
 # Clone SuiteSparse
-RUN git clone https://github.com/DrTimothyAldenDavis/SuiteSparse.git
+RUN git clone https://github.com/DrTimothyAldenDavis/SuiteSparse.git \
+    && cd SuiteSparse \
+    && git checkout v7.12.1
 # Create build directory
 WORKDIR /SuiteSparse/build
 # Configure SuiteSparse with static linking - build only essential libraries for GWAS
@@ -162,8 +164,8 @@ RUN /opt/venv/bin/pip install --no-cache-dir \
     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
  && find /opt/venv -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
  && find /opt/venv -type f -name '*.pyc' -delete \
- && find /opt/venv -type f -name '*.pyo' -delete \
- && rm -rf /opt/venv/lib/python3.12/site-packages/torch/test
+ && find /opt/venv -type f -name '*.pyo' -delete 
+
 
 # Install other Python packages from PyPI
 RUN /opt/venv/bin/pip install --no-cache-dir \
