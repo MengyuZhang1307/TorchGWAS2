@@ -17,7 +17,7 @@ namespace std
                     int robust, std::vector<string> covSelHeadersName, std::vector<double> phenodata, 
                     std::vector<double> covdata, std::vector<double>* XinvXTX_ret, vector<double>* miu_ret, 
                     vector<double>* resid_ret, double* sigma2_ret, std::vector<double>& beta_ret,
-                    std::vector<double>& Xbeta_ret, bool verbose)>;
+                    std::vector<double>& Xbeta_ret, bool verbose, std::ostream* log_stream)>;
         using Matrix_variant = std::variant<Mat, SpaMat>;
     }
 }
@@ -185,7 +185,7 @@ class GMMAT
          * @param tol 
          * @return Glmmkin 
          */
-        Glmmkin glmmkin_ai(Fit fit_null, bool verbose, int maxiter = 500, double tol = 1e-5);
+        Glmmkin glmmkin_ai(Fit fit_null, bool verbose, int maxiter = 500, double tol = 1e-5, std::ostream* log_stream = nullptr);
          /**
           * @brief 
           * 
@@ -202,6 +202,7 @@ class GMMAT
           * @return Glmmkin 
           */
         Glmmkin glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
+                            std::ostream* log_stream = nullptr,
                             std::string const method = "REML", 
                             std::string method_optim = "AI", 
                             int maxiter = 500,
@@ -230,9 +231,11 @@ class GMMAT
                 std::ext::FitNull_f const& fit0, 
                 std::ext::V_string const& ph_column,
                 std::ext::V_int pheno_valid_indices,
+                std::string ph_column_name,
                 std::ext::V_string covSelectedHeader, 
                 std::string randomSlopeName,
                 bool verbose,
+                std::ostream* log_stream = nullptr,
                 std::string const groups = "",
                 std::string const method = "REML", 
                 std::string method_optim = "AI", 

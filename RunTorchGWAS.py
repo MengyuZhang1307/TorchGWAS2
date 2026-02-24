@@ -86,6 +86,7 @@ def parse_args():
     parser.add_argument("--kin-file", type=str, default="", help="Kinship file path (optional, required for step1 and step2 if using kinship)")
     parser.add_argument("--kin-diag", type=float, default=1.0, help="Diagonal value of " \
                         "kinship matrix that not accounting for inbreeding (Default: 1.0)")
+    parser.add_argument("--intermediate-file", type=str, default="", help="intermediate file path (required for step2)")
     parser.add_argument("--pheno-delim", type=str, default=",", help="Phenotype file delimiter (default: comma)")
     parser.add_argument("--cov-delim", type=str, default=",", help="Covariate file delimiter (default: comma)")
     parser.add_argument("--kin-delim", type=str, default=",", help="Kinship file delimiter (default: comma)")

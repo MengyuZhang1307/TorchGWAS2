@@ -131,9 +131,7 @@ DensMat create_covdata(const DataFrame& df) {
             catch(std::invalid_argument const&e)
             {
                 std::cerr << "value" << df.m_data.at(df.m_headers[j-1])[i] << " is not a valid number \n"; 
-            }
-
-              
+            }              
         }
     } 
     return dmat2ret;
@@ -569,9 +567,10 @@ bool check_convergence(const DensVec& alpha, const DensVec& alpha0,
 /**
     * @brief A function to remove collinear columns from covariate matrix using QR decomposition.
  */
-void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
+void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs, std::ostream* log_stream)
 {
-    std::cout << "Checking for collinear columns in the covariate matrix...\n";
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
+    out << "Checking for collinear columns in the covariate matrix...\n";
     const int nrows = m_X.rows();
     const int ncols = m_X.cols();
 
@@ -599,22 +598,22 @@ void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
     if (dropped_cols.empty()) 
     {
         // Nothing to drop; m_X stays as is
-        std::cout << "No collinear columns detected in the covariate matrix.\n";
-        std::cout << "****************************************************************************\n";
+        out << "No collinear columns detected in the covariate matrix.\n";
+        out << "****************************************************************************\n";
         return;
     }
 
     //  Build a mask of columns to keep
-    std::cout << "Dropping column(s): ";
+    out << "Dropping column(s): ";
     for (int idx : dropped_cols) 
     {
         if(idx == 0)
         {
-            std::cout << "intercept column-added by model" << " ";
+            out << "intercept column-added by model" << " ";
         }
         else
         {
-            std::cout << cov_selected_hdrs[idx-1] << " ";
+            out << cov_selected_hdrs[idx-1] << " ";
         }
     }
 
@@ -651,7 +650,7 @@ void remove_collinear_columns(Mat &m_X, std::ext::V_string &cov_selected_hdrs)
         }
     }
     cov_selected_hdrs.swap(hdr_new);
-    std::cout << "****************************************************************************\n";
+    out << "****************************************************************************\n";
 }
 
 
@@ -1038,8 +1037,9 @@ Fit GMMAT::fitglmm_ai(DensVec const& W)
 }
 
 Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
-                            int maxiter, double tol)
+                            int maxiter, double tol, std::ostream* log_stream)
 {
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
     Glmmkin glmmkin;
     DensVec py;
     DensVec apy;
@@ -1266,9 +1266,9 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
         {
             if(verbose)
             {
-                std::cout << "iteration: " << i << '\n';
-                std::cout << "Variance component estimates (m_tau):\n" << m_tau << '\n';
-                std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+                out << "iteration: " << i << '\n';
+                out << "Variance component estimates (m_tau):\n" << m_tau << '\n';
+                out << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
             }
             break;
         }
@@ -1366,16 +1366,18 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
 }  
 
 Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
+                        std::ostream* log_stream,
                         std::string const method, 
                         std::string method_optim, 
                         int maxiter,
                         double tol, double tau_min, 
                         double tau_max, int tau_region)
 {
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
     Glmmkin glmmkin;
     if(method_optim == "Brent")
     {
-        std::cout << "Error: we do not support Brent\n";
+        out << "Error: we do not support Brent\n";
         exit(EXIT_FAILURE);
     }
     
@@ -1399,7 +1401,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
         }
 
         std::ext::V_int fixtau_old(kins_size + ng, 0);
-        glmmkin = glmmkin_ai(fit_null, verbose, maxiter, tol);
+        glmmkin = glmmkin_ai(fit_null, verbose, maxiter, tol, log_stream);
         auto fixtau_new = logic_update_fixed_condtion(m_tau, tol);
         //Update fixtau and fixrho
         update_fixtau_fixrho(fixtau_new, fixrho_new, tol);
@@ -1415,7 +1417,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
             }
             m_fixtau = fixtau_old;
             m_fixrho = fixrho_old;
-            glmmkin = glmmkin_ai(fit_null, verbose, maxiter, tol);
+            glmmkin = glmmkin_ai(fit_null, verbose, maxiter, tol, log_stream);
             fixtau_new = logic_update_fixed_condtion(m_tau, tol);
             update_fixtau_fixrho(fixtau_new, fixrho_new, tol);
         }
@@ -1459,9 +1461,11 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
                             std::ext::FitNull_f const& fit0, 
                             std::ext::V_string const& ph_column,
                             std::ext::V_int pheno_valid_indices,
+                            std::string ph_column_name,
                             std::ext::V_string cov_selected_hdrs, 
                             std::string rand_slope_hdr,
                             bool verbose,
+                            std::ostream* log_stream,
                             std::string const groups,
                             std::string const method, 
                             std::string method_optim, 
@@ -1469,6 +1473,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
                             double tol, double tau_min, 
                             double tau_max, int tau_region)
 {
+    std::ostream& log_out = (log_stream ? *log_stream : std::cout);
     Glmmkin glmmkin;
     SparseInverse sp_missing(cov_copy, kin_add, kin_delim, 
         kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
@@ -1537,22 +1542,22 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     GEMFit gf;
     // std::ext::V_double pheno_data = conv_dv2stdVd(m_y);
     m_X = create_covdata(m_vkins_sp[0].cov.m_data_frame.copy_by_hdrs(cov_selected_hdrs));
-    remove_collinear_columns(m_X, cov_selected_hdrs);
+    remove_collinear_columns(m_X, cov_selected_hdrs, log_stream);
     std::ext::V_double cov_data = conv_dm2stdV(m_X); 
     m_n_sel_col = cov_selected_hdrs.size();
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
-                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, verbose); 
-    std::cout << std::flush;
+                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, verbose, log_stream); 
+    log_out << std::flush;
     if(verbose)
     {
-        std::cout << "****************************************************************************\n";
-        std::cout << "Start fitting the null model...\n \n";
+        log_out << "****************************************************************************\n";
+        log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n \n";
     }
     new_y.clear();
     fit_null = gf.convert_2_fit(); 
     if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))
     {
-        std::cout << "Duplicated id detected...\nAssuming longitudinal data with repeated measures...\n";
+        log_out << "Duplicated id detected...\nAssuming longitudinal data with repeated measures...\n";
         if(!m_vkins_sp[0].kin.m_null_kin) // if there is a kinship file add another matrix
         {
             SparseInverse spi;
@@ -1624,7 +1629,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         
     }
 
-    glmmkin = glmmkin_fit(fit_null, group_id, verbose, method, method_optim, 
+    glmmkin = glmmkin_fit(fit_null, group_id, verbose, log_stream, method, method_optim, 
                           maxiter, tol, tau_min, tau_max, tau_region);
 
     glmmkin_residuals glmmkin_results;

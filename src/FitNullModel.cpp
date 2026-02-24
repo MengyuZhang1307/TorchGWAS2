@@ -33,7 +33,17 @@
    1. OOP
  */
 
-#include "FitNullModel.h" 
+#include "FitNullModel.h"
+#include <atomic>
+#include <exception>
+#include <mutex>
+#include <sstream>
+#include <stdexcept>
+
+namespace 
+{
+std::mutex g_glmm_log_mutex;
+}
 
 NullModel::NullModel(GEMOptions const& user_opt): opt(user_opt){}
 
@@ -239,84 +249,122 @@ void NullModel::process_gmmat(const std::string kin_add,
                             const std::string& random_slope_header_name,
                             const std::string& output)
 {
-    Cov cov = setup_cov_pheno(cov_add, cov_delim, sampleid_header_name, cov_headers,
-                        bgen_sample_id, missing_key);
-    int col = 0;
-    int num_columns = pheno_column_names.size();
-    std::ext::VV_double output_matrix;
-    size_t res_size;
-    bool sampleid_filled = false;    
-    std::ext::V_string id_include;
-    const int pheno_columns = num_columns - 2;
-    const int block_size = (pheno_columns + num_threads - 1) / num_threads;  // ceil division
-
-    std::vector<std::thread> threads;
-    //glmmkin_residuals is struct return type by GMMAT
-    std::ext::VV_string id_include_vec;
-    id_include_vec.reserve(pheno_columns);
-    std::map<std::string, glmmkin_residuals> residual_map;
-    std::vector<std::map<std::string, glmmkin_residuals>> thread_local_maps(num_threads);
-    // setup covariate file
-    //Map cov sample ids to int to be used as matrix indices
-
-    for (int t = 0; t < num_threads; ++t) 
+    try
     {
-        int start_col = t * block_size;
-        int end_col = std::min(start_col + block_size, pheno_columns);
+        Cov cov = setup_cov_pheno(cov_add, cov_delim, sampleid_header_name, cov_headers,
+                            bgen_sample_id, missing_key);
+        int col = 0;
+        int num_columns = pheno_column_names.size();
+        std::ext::VV_double output_matrix;
+        size_t res_size;
+        bool sampleid_filled = false;    
+        std::ext::V_string id_include;
+        const int pheno_columns = num_columns - 2;
+        const int block_size = (pheno_columns + num_threads - 1) / num_threads;  // ceil division
 
-        if (start_col >= end_col) break;  // no more work
+        std::vector<std::thread> threads;
+        //glmmkin_residuals is struct return type by GMMAT
+        std::ext::VV_string id_include_vec;
+        id_include_vec.reserve(pheno_columns);
+        std::map<std::string, glmmkin_residuals> residual_map;
+        std::vector<std::map<std::string, glmmkin_residuals>> thread_local_maps(num_threads);
+        std::atomic<bool> stop_requested{false};
+        std::exception_ptr first_exception = nullptr;
+        std::mutex exception_mutex;
+        // setup covariate file
+        //Map cov sample ids to int to be used as matrix indices
 
-        threads.emplace_back(
-            [this, cov_copy = cov, &kin_add, &kin_delim, &kin_diag,
-            &cov_delim, &bgen_sample_id, 
-            &missing_key, start_col, t, end_col, &fitNullModel2, 
-            &covariates, &random_slope_header_name,
-            &thread_local_maps] () mutable
-            {
-                auto& local_map = thread_local_maps[t];
-                
-                for (int this_col = start_col; this_col < end_col; ++this_col) 
-                {
-                    GMMAT gmmat;
-                    
-                    glmmkin_residuals residuals = gmmat.glmmkin_init(cov_copy,
-                        kin_add, kin_delim, kin_diag,
-                        cov_delim, bgen_sample_id, 
-                        missing_key, fitNullModel2, this->phenotype_data[this_col], 
-                        this->pheno_valid_indices[this_col], 
-                        covariates, random_slope_header_name, this->opt.verbose
-                    );
-
-                    local_map[this->pheno_column_names[this_col + 2]] = std::move(residuals);
-                }
-            }
-        );
-    }
-    
-    for (auto& th : threads) 
-    {
-        th.join();
-    }
-
-    for (const auto& local_map : thread_local_maps)
-    {
-        for (const auto& [key, value] : local_map)
+        for (int t = 0; t < num_threads; ++t) 
         {
-            residual_map[key] = value;
-        }
-    }
-    
-    std::ext::V_double c2;
-    for (int col = 0; col < pheno_columns; ++col) 
-    {
-        auto& residual = residual_map[pheno_column_names[col + 2]].scaled_residuals_c1;
-        id_include_vec.emplace_back(residual_map[pheno_column_names[col + 2]].id_include);
-        output_matrix.emplace_back(std::move(residual));
-        c2.push_back(residual_map[pheno_column_names[col + 2]].c2);
-    }
+            int start_col = t * block_size;
+            int end_col = std::min(start_col + block_size, pheno_columns);
 
-    print_res(output, pheno_column_names, c2,
-                bgen_sample_id, id_include_vec, output_matrix);
+            if (start_col >= end_col) break;  // no more work
+
+            threads.emplace_back(
+                [this, cov_copy = cov, &kin_add, &kin_delim, &kin_diag,
+                &cov_delim, &bgen_sample_id, 
+                &missing_key, start_col, t, end_col, &fitNullModel2, 
+                &covariates, &random_slope_header_name,
+                &thread_local_maps, &stop_requested, &first_exception, &exception_mutex] () mutable
+                {
+                    auto& local_map = thread_local_maps[t];
+                    
+                    for (int this_col = start_col; this_col < end_col && !stop_requested.load(std::memory_order_relaxed); ++this_col) 
+                    {
+                        try
+                        {
+                            GMMAT gmmat;
+                            std::ostringstream local_log;
+                            glmmkin_residuals residuals = gmmat.glmmkin_init(cov_copy,
+                                kin_add, kin_delim, kin_diag,
+                                cov_delim, bgen_sample_id, 
+                                missing_key, fitNullModel2, 
+                                this->phenotype_data[this_col], 
+                                this->pheno_valid_indices[this_col], 
+                                this->pheno_column_names[this_col + 2],
+                                covariates, random_slope_header_name, this->opt.verbose,
+                                &local_log
+                            );
+                            {
+                                std::lock_guard<std::mutex> guard(g_glmm_log_mutex);
+                                std::cout << local_log.str() << std::flush;
+                            }
+
+                            local_map[this->pheno_column_names[this_col + 2]] = std::move(residuals);
+                        }
+                        catch (...)
+                        {
+                            stop_requested.store(true, std::memory_order_relaxed);
+                            std::lock_guard<std::mutex> guard(exception_mutex);
+                            if (!first_exception)
+                            {
+                                first_exception = std::current_exception();
+                            }
+                            break;
+                        }
+                    }
+                }
+            );
+        }
+        
+        for (auto& th : threads) 
+        {
+            th.join();
+        }
+        if (first_exception)
+        {
+            std::rethrow_exception(first_exception);
+        }
+
+        for (const auto& local_map : thread_local_maps)
+        {
+            for (const auto& [key, value] : local_map)
+            {
+                residual_map[key] = value;
+            }
+        }
+        
+        std::ext::V_double c2;
+        for (int col = 0; col < pheno_columns; ++col) 
+        {
+            auto& residual = residual_map[pheno_column_names[col + 2]].scaled_residuals_c1;
+            id_include_vec.emplace_back(residual_map[pheno_column_names[col + 2]].id_include);
+            output_matrix.emplace_back(std::move(residual));
+            c2.push_back(residual_map[pheno_column_names[col + 2]].c2);
+        }
+
+        print_res(output, pheno_column_names, c2,
+                    bgen_sample_id, id_include_vec, output_matrix);
+    }
+    catch (const std::exception& e)
+    {
+        throw std::runtime_error(std::string("process_gmmat failed: ") + e.what());
+    }
+    catch (...)
+    {
+        throw std::runtime_error("process_gmmat failed: unknown exception");
+    }
 }
 
  
@@ -431,35 +479,36 @@ void center(int center, int scale, int samSize, int numSelCol, std::ext::V_doubl
 } 
      
 
-void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat, double* beta, int phenoType, int samSize) 
+void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat, double* beta, int phenoType, int samSize, std::ostream* log_stream) 
 {
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
     covNames.insert(covNames.begin(), "Intercept");
     boost::math::chi_squared chisq_dist_M(1);
 
-    cout << "\nCoefficients: \n";
-    cout << boost::format("%-26s %-17s %-22s %-19s %-15s\n") % "" % "Estimate" % "Std. Error" % "Z-value" % "P-value";
+    out << "\nCoefficients: \n";
+    out << boost::format("%-26s %-17s %-22s %-19s %-15s\n") % "" % "Estimate" % "Std. Error" % "Z-value" % "P-value";
     for (int i = 0; i < numCovs; i++) 
     {
         double stdError = sqrt(covVarMat[i * numCovs + i]);
         double zvalue = beta[i] / stdError;
         double pr = (isnan(zvalue)) ? NAN : boost::math::cdf(complement(chisq_dist_M, (beta[i] * beta[i]) / covVarMat[i * numCovs + i]));
-        cout << boost::format("%+15s %19.6e %19.6e %19.6e %19.6e\n") % covNames[i] % beta[i] % stdError % zvalue % pr;
+        out << boost::format("%+15s %19.6e %19.6e %19.6e %19.6e\n") % covNames[i] % beta[i] % stdError % zvalue % pr;
     }
 
-    cout << "\nVariance-Covariance Matrix: \n";
-    cout << boost::format("%+35s") % covNames[0];
+    out << "\nVariance-Covariance Matrix: \n";
+    out << boost::format("%+35s") % covNames[0];
     for (int i = 1; i < numCovs; i++) {
-        cout << boost::format("%+20s") % covNames[i];
+        out << boost::format("%+20s") % covNames[i];
     }
-    cout << "\n";
+    out << "\n";
     for (int i = 0; i < numCovs; i++) {
-        cout << boost::format("%+15s") % covNames[i];
+        out << boost::format("%+15s") % covNames[i];
         for (int j = 0; j < numCovs; j++) {
-            cout << boost::format("%20.6e") % covVarMat[j * numCovs + i];
+            out << boost::format("%20.6e") % covVarMat[j * numCovs + i];
         }
-        cout << "\n";
+        out << "\n";
     }
-    cout << "\n";
+    out << "\n";
 }
 
  
@@ -467,8 +516,9 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
                 int robust, std::ext::V_string covariates, std::ext::V_double phenodata, 
                 std::ext::V_double covdata, std::ext::V_double* XinvXTX_ret, std::ext::V_double* miu_ret, 
                 std::ext::V_double* resid_ret, double* sigma2_ret, std::ext::V_double& beta_ret,
-                std::ext::V_double& Xbeta_ret, bool verbose)
+                std::ext::V_double& Xbeta_ret, bool verbose, std::ostream* log_stream)
 {
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
     double* phenoY = &phenodata[0];
     double* covX = &covdata[0];
     vector <double> residvec(samSize);
@@ -479,7 +529,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
 
     if (verbose)
     {
-        cout << "Precalculations and fitting null model..." << endl;
+        out << "Precalculations and fitting null model..." << endl;
     }
     //auto start_time = std::chrono::high_resolution_clock::now();
     // transpose(X) * X
@@ -565,7 +615,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         matmatprod(WX, XTransX, XinvXTX, samSize, numSelCol + 1, numSelCol + 1);
         delete[] WX;
 
-        cout << "Logistic regression reaches convergence after " << iter << " steps...\n";
+        out << "Logistic regression reaches convergence after " << iter << " steps...\n";
     }
     else {
         matmatprod(covX, XTransX, XinvXTX, samSize, numSelCol + 1, numSelCol + 1);
@@ -593,7 +643,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         }
         if (verbose)
         {
-            printCovVarMat(numSelCol + 1, covariates, XTransX, beta, phenoType, samSize);
+            printCovVarMat(numSelCol + 1, covariates, XTransX, beta, phenoType, samSize, log_stream);
         }
     }
     else {
@@ -613,7 +663,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         matmatTprod(XTransX, XTransXtXR2tX, XTransXR2, numSelCol + 1, numSelCol + 1, numSelCol + 1);
         if (verbose)
         {
-            printCovVarMat(numSelCol + 1, covariates, XTransXR2, beta, phenoType, samSize);
+            printCovVarMat(numSelCol + 1, covariates, XTransXR2, beta, phenoType, samSize, log_stream);
         }
         delete[] XR2tX;
         delete[] XTransXtXR2tX;
@@ -668,7 +718,7 @@ void NullModel::print_res(
         std::cerr << " Failed to open " << inter_path << " for writing.\n";
         std::exit(EXIT_FAILURE);
     }
-    out << "smaple_id" << '\t';
+    out << "sample_id" << '\t';
     // Header line: phenotype names
     for (size_t i = 2; i < pheno_column_names.size(); ++i) 
     {

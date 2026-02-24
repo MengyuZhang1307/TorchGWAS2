@@ -13,9 +13,9 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
                     int robust, std::ext::V_string covSelHeadersName, std::ext::V_double phenodata, 
                     std::ext::V_double covdata, std::ext::V_double* XinvXTX_ret, std::ext::V_double* miu_ret, 
                     std::ext::V_double* resid_ret, double* sigma2_ret, std::ext::V_double& beta_ret,
-                    std::ext::V_double& Xbeta_ret, bool verbose);
+                    std::ext::V_double& Xbeta_ret, bool verbose, std::ostream* log_stream = nullptr);
 
-void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat, double* beta, int phenoType, int samSize);
+void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat, double* beta, int phenoType, int samSize, std::ostream* log_stream = nullptr);
 
 class NullModel 
 {

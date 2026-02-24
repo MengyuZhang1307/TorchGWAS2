@@ -4,6 +4,7 @@
 #include <iterator>
 #include <unordered_set>
 #include <chrono>
+#include <stdexcept>
 
 
 SparseInverse::SparseInverse(Cov &cov_copy, const std::string kin_add, const char kin_delim, 
@@ -273,8 +274,7 @@ SpaMat SparseInverse::inv_spamat()
     solver.compute(m_spmat);
     if (solver.info() != Eigen::Success) 
     { 
-        std::cerr << "Decomposition failed!" << std::endl; 
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Decomposition failed!");
     }
     std::cout << "Solver computed finished" << std::endl;
     SpaMat I(m_spmat.rows(), m_spmat.rows()); 
@@ -507,8 +507,7 @@ DensMat SparseInverse::inv(DensMat const& dm)
     
     if (ldlt.info() != Eigen::Success)
     {
-        std::cerr << "Error on LDLT!" << std::endl;
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Error on LDLT!");
     }
     
     DensMat I(dm.rows(), dm.rows()); 

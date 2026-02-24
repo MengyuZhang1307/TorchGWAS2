@@ -19,6 +19,7 @@ class CoutRedirector : public std::streambuf
         int sync() override;
     private:
         std::string buffer_;
+         static thread_local std::string buffer;
 };
 
 class CerrRedirector : public std::streambuf 
