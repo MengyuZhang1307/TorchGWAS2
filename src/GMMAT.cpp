@@ -1439,7 +1439,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
             if(kins_size == 1)
             {
                 std::cerr << "Average Information REML not converged, refitting model using Brent method...\n";
-                std::cerr << "Brent is not available for the time being, stay in touch for updates ;)\n";
+                std::cerr << "Brent is not available for the time being, stay in touch for updates \n";
                 exit(EXIT_FAILURE);
             }
         }

@@ -366,7 +366,6 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         'data_transfer': [],        # Time to transfer data to GPU/CPU
         'genotype_regression': [],  # Time for covariate regression on genotypes
         'gwas_computation': [],     # Time for calc_t (core GWAS math)
-        'gpu_to_cpu': [],           # Time to transfer results back to CPU
         'numpy_conversion': [],     # Time to convert to numpy arrays
         'arrow_formatting': [],     # Time to create Arrow/Parquet structures
         'io_write': [],             # Time for disk I/O (Parquet writing)
@@ -376,16 +375,16 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     
     chunk_count = 0
     total_snps_processed = 0
-    
-    overall_start = time.time()
-    iteration_end = overall_start  # Track end of previous iteration for queue wait calculation
+  
+    start_before_loop = time.time()
 
     for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
+        print(f"queue size :{queue.size()}")
         iteration_start = time.time()
         # Queue wait = time from end of last iteration to start of this iteration
         # Separate first chunk (includes C++ startup) from subsequent chunks
         if chunk_count == 0:
-            timing_stats['first_chunk_wait'].append(iteration_start - iteration_end)
+            timing_stats['first_chunk_wait'].append(iteration_start - start_before_loop)
         else:
             timing_stats['queue_wait'].append(iteration_start - iteration_end)
         
@@ -443,12 +442,6 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         gwas_end = time.time()
         timing_stats['gwas_computation'].append(gwas_end - gwas_start)
 
-        # ---- GPU to CPU Transfer ----
-        gpu_to_cpu_start = time.time()
-        # beta_coeffs, se, t_stats are already on CPU from calc_t
-        gpu_to_cpu_end = time.time()
-        timing_stats['gpu_to_cpu'].append(gpu_to_cpu_end - gpu_to_cpu_start)
-
         # ---- NumPy Conversion ----
         numpy_start = time.time()
         b_np = beta_coeffs.cpu().numpy().astype(np.float32)
@@ -501,8 +494,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
             
             rows_in_buffer = 0
             buffer.clear()
-            del combined, b_np, se_np, neg_log10_pval,
-            all_stats, all_stats_2d, table, stat_arrays, meta_arrays
+            del combined, b_np, se_np, neg_log10_pval, all_stats, all_stats_2d, table, stat_arrays, meta_arrays
             gc.collect()
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
@@ -525,8 +517,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         timing_stats['io_write'].append(io_end - io_start)
         
         buffer.clear()
-        del combined, b_np, se_np, neg_log10_pval,
-        all_stats, all_stats_2d, table, stat_arrays, meta_arrays
+        del combined, b_np, se_np, neg_log10_pval, all_stats, all_stats_2d, table, stat_arrays, meta_arrays
         gc.collect()
         if device.type == 'cuda':
             torch.cuda.empty_cache()
@@ -567,10 +558,9 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
         print(f"First chunk wait (C++ startup)..... {first_wait*1000:8.2f} ms  (total: {first_wait:6.2f}s, {first_pct:5.1f}%)")
     
     print_timing("Queue waiting time (chunks 2+)", timing_stats['queue_wait'])
-    print_timing("Data transfer to device", timing_stats['data_transfer'])
+    print_timing("Data transfer to device and create tensor", timing_stats['data_transfer'])
     print_timing("Genotype regression", timing_stats['genotype_regression'])
     print_timing("GWAS computation (calc_t)", timing_stats['gwas_computation'])
-    print_timing("GPU→CPU transfer", timing_stats['gpu_to_cpu'])
     print_timing("NumPy conversion", timing_stats['numpy_conversion'])
     print_timing("Arrow/Parquet formatting", timing_stats['arrow_formatting'])
     if timing_stats['io_write']:
