@@ -1,5 +1,4 @@
-#to run on server $HOME/local/python3.11/bin/python3 Bgen.py or python3 Bgen.py 
-
+#!/usr/bin/env python3
 import pandas as pd
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "pymodules"))
@@ -12,17 +11,32 @@ import numpy as np
 import time
 import argparse
 import logging
-# from contextlib import redirect_stdout, redirect_stderr
 import io
 import tempfile
 from pathlib import Path
 import re
 import traceback
-# import threading
-# import atexit
 import faulthandler
+import torch
+
+# Memory recording
+def reset_peak_memory(device_str="cuda:0"):
+    if not torch.cuda.is_available():
+        return
+    try:
+        torch.cuda.reset_peak_memory_stats(torch.device(device_str))
+    except Exception:
+        return
 
 
+def get_peak_memory_gb(device_str="cuda:0") -> float:
+    if not torch.cuda.is_available():
+        return 0.0
+    try:
+        torch.cuda.synchronize()
+        return torch.cuda.max_memory_allocated(torch.device(device_str)) / 1024**3
+    except Exception:
+        return 0.0
 def setup_step1_log(log_file, mode="a"):
     root = logging.getLogger()
     root.handlers.clear()
@@ -224,6 +238,17 @@ def run_all(dir_name, base_name, args, log_file):
     print("*" * 80)
     print("STEP 2: Running Torch GWAS")
     print("*" * 80)
+
+    # Reset peak memory once before the whole STEP2 batch so we can
+    # measure the peak memory across the entire loop.
+    if args.device == "cuda" and torch.cuda.is_available():
+        device_str = f"cuda:{torch.cuda.current_device()}"
+        reset_peak_memory(device_str)
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
     for bgen_i, sample_i in zip(args.bgen, args.sample):
         sub_step2 = argparse.Namespace(**vars(args))
         sub_step2.bgen = bgen_i
@@ -244,7 +269,13 @@ def run_all(dir_name, base_name, args, log_file):
         )
         print(f"TGWAS parquet output: {TGWAS_file}")
 
-
+    # Log the peak GPU memory for the entire batch
+    if args.device == "cuda" and torch.cuda.is_available():
+        try:
+            peak = get_peak_memory_gb(device_str)
+            logging.info("Peak GPU memory (GB) for STEP2 batch: %.3f", peak)
+        except Exception:
+            pass
     # ------------------
     # STEP 3
     # ------------------
@@ -376,6 +407,17 @@ def main():
             if len(args.bgen) != len(args.sample):
                 print(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
                 raise SystemExit(2)
+            
+            # Reset peak memory once before the whole step2 batch so we can
+            # measure the peak memory across the entire loop.
+            if args.device == "cuda" and torch.cuda.is_available():
+                device_str = f"cuda:{torch.cuda.current_device()}"
+                reset_peak_memory(device_str)
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+
             for bgen_i, sample_i in zip(args.bgen, args.sample):
                 sub = argparse.Namespace(**vars(args))
                 sub.bgen = bgen_i   
@@ -387,6 +429,13 @@ def main():
                 confopt = build_conf_step2(sub)
                 run_step2(confopt, dir_name, base_i, base_name, sub)
 
+            # Log the peak GPU memory for the entire batch
+            if args.device == "cuda" and torch.cuda.is_available():
+                try:
+                    peak = get_peak_memory_gb(device_str)
+                    logging.info("Peak GPU memory (GB) for step2 batch: %.3f", peak)
+                except Exception:
+                    pass
         elif args.step == "step3":
             setup_pipeline_log(log_file, mode="a")
             for pq in args.parquet:
