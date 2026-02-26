@@ -377,11 +377,12 @@ void NullModel::fit_nullmodel(bool kin_flag,
         auto start_time_gmmat = std::chrono::high_resolution_clock::now();
         vector <string> cov_headers(opt.covariates);
         cov_headers.insert(cov_headers.begin(), opt.sampleid_header_name);
+        
         if(opt.random_slope_header_name.size() > 0)
         {
             if(std::find(cov_headers.begin(), cov_headers.end(), opt.random_slope_header_name) == cov_headers.end())
             {
-                std::cerr << "Warning: The random slope variable '" << randomSlopeHeaderName << "' was not found among the covariates.\n";
+                std::cerr << "Warning: The random slope variable '" << opt.random_slope_header_name << "' was not found among the covariates.\n";
                 exit(EXIT_FAILURE);
             }
         }           

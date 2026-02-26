@@ -354,7 +354,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
 
     if os.path.exists(TGWAS_file):
         os.remove(TGWAS_file)
-
+    
     # ====================================================================
     # PROFILING: Initialize timing accumulators
     # ====================================================================
@@ -375,7 +375,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     total_snps_processed = 0
   
     start_before_loop = time.time()
-
+    record_time_before_loop = start_before_loop - overall_start
     for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
         print(f"queue size :{queue.size()}")
         iteration_start = time.time()
@@ -535,7 +535,8 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     print(f"Total SNPs processed: {total_snps_processed:,}")
     print(f"Number of chunks: {chunk_count}")
     print(f"Average SNPs per chunk: {total_snps_processed / chunk_count:.1f}")
-    print(f"Total wall-clock time: {total_time:.2f}s")
+    print(f"Total time before start reading queue in Run_gwas: {record_time_before_loop:.2f}s")
+    print(f"Total wall-clock time for run_gwas: {total_time:.2f}s")
     print(f"SNPs per second: {total_snps_processed / total_time:.1f}")
     
     print("\n" + "-"*80)

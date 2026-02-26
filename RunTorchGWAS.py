@@ -28,7 +28,6 @@ def reset_peak_memory(device_str="cuda:0"):
     except Exception:
         return
 
-
 def get_peak_memory_gb(device_str="cuda:0") -> float:
     if not torch.cuda.is_available():
         return 0.0
@@ -235,6 +234,7 @@ def run_all(dir_name, base_name, args, log_file):
     # ------------------
     # STEP 2 (loop)
     # ------------------
+    time_step2_satrt = time.time()
     print("*" * 80)
     print("STEP 2: Running Torch GWAS")
     print("*" * 80)
@@ -276,6 +276,8 @@ def run_all(dir_name, base_name, args, log_file):
             logging.info("Peak GPU memory (GB) for STEP2 batch: %.3f", peak)
         except Exception:
             pass
+    time_step2_end = time.time()
+    print(f"total time for stpp2 {time_step2_end - time_step2_satrt}")
     # ------------------
     # STEP 3
     # ------------------
