@@ -609,41 +609,4 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     io_time = sum(timing_stats['io_write'])
     io_pct = (io_time / total_time) * 100
     print(f"Disk I/O time: {io_time:.2f}s ({io_pct:.1f}%)")
-    
-    # # Effective throughput
-    # actual_work_time = total_time - queue_wait
-    # if actual_work_time > 0:
-    #     effective_throughput = total_snps_processed / actual_work_time
-    #     print(f"Effective throughput (excluding queue wait): {effective_throughput:.1f} SNPs/s")
-    
     print("\n" + "-"*80)
-    print("BOTTLENECK ANALYSIS:")
-    print("-"*80)
-    
-    components = {
-        'Queue waiting': queue_pct,
-        f'{device.type.upper()} compute': compute_pct,
-        'Python overhead': python_overhead_pct,
-        'Disk I/O': io_pct
-    }
-    
-    bottleneck = max(components.items(), key=lambda x: x[1])
-    print(f"Primary bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of total time)")
-    
-    if queue_wait_ongoing / (total_time - sum(timing_stats['first_chunk_wait'])) > 0.3:
-        print(" High ongoing queue waiting time - C++ dosage calculation is slower than Python processing")
-        print("  Consider: Increasing --threads for BGEN reading to speed up C++ side")
-    elif queue_pct > 30:
-        print(" High total queue waiting time (mostly first chunk startup)")
-        print("  This is normal - C++ threads need time to start and produce first chunk")
-    elif compute_pct > 60:
-        print(f" Good: Most time spent in {device.type.upper()} computation (efficient)")
-    elif python_overhead_pct > 40:
-        print(" High Python overhead - consider optimizing data conversion steps")
-    elif io_pct > 30:
-        print(" High I/O time - consider faster storage or different compression")
-    
-    print("\n  NOTE: Queue wait times should be similar between CPU and GPU runs,")
-    print("   since both consume from the same C++ producer thread.")
-    
-    print("="*80 + "\n")
