@@ -277,7 +277,8 @@ def run_all(dir_name, base_name, args, log_file):
         except Exception:
             pass
     time_step2_end = time.time()
-    print(f"total time for stpp2 {time_step2_end - time_step2_satrt}")
+    print("*" * 80)
+    print(f"total time for step2 {time_step2_end - time_step2_satrt}")
     # ------------------
     # STEP 3
     # ------------------
