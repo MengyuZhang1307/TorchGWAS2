@@ -292,10 +292,10 @@ void NullModel::process_gmmat(const std::string kin_add,
                     
                     for (int this_col = start_col; this_col < end_col && !stop_requested.load(std::memory_order_relaxed); ++this_col) 
                     {
+                        std::ostringstream local_log;
                         try
                         {
                             GMMAT gmmat;
-                            std::ostringstream local_log;
                             glmmkin_residuals residuals = gmmat.glmmkin_init(cov_copy,
                                 kin_add, kin_delim, kin_diag,
                                 cov_delim, bgen_sample_id, 
@@ -313,14 +313,30 @@ void NullModel::process_gmmat(const std::string kin_add,
 
                             local_map[this->pheno_column_names[this_col + 2]] = std::move(residuals);
                         }
-                        catch (...)
+                        catch (const std::exception& e) 
                         {
+                            {
+                                std::lock_guard<std::mutex> guard(g_glmm_log_mutex);
+                                std::cout << local_log.str()
+                                        << "\n[EXCEPTION] " << e.what() << "\n"
+                                        << std::flush;
+                            }
                             stop_requested.store(true, std::memory_order_relaxed);
                             std::lock_guard<std::mutex> guard(exception_mutex);
-                            if (!first_exception)
+                            if (!first_exception) first_exception = std::current_exception();
+                            break;
+                        }
+                        catch (...) 
+                        {
                             {
-                                first_exception = std::current_exception();
+                                std::lock_guard<std::mutex> guard(g_glmm_log_mutex);
+                                std::cout << local_log.str()
+                                        << "\n[EXCEPTION] unknown\n"
+                                        << std::flush;
                             }
+                            stop_requested.store(true, std::memory_order_relaxed);
+                            std::lock_guard<std::mutex> guard(exception_mutex);
+                            if (!first_exception) first_exception = std::current_exception();
                             break;
                         }
                     }
@@ -357,7 +373,7 @@ void NullModel::process_gmmat(const std::string kin_add,
         print_res(output, pheno_column_names, c2,
                     bgen_sample_id, id_include_vec, output_matrix);
     }
-    catch (const std::exception& e)
+    catch (std::exception const& e)
     {
         throw std::runtime_error(std::string("process_gmmat failed: ") + e.what());
     }

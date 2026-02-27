@@ -300,7 +300,7 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
     sqrt_c2.sqrt_()
 
     # Start dosage streaming from runner
-    queue = runner.start_dosage_stream(queue_capacity=20, snps_per_chunk=snps_per_chunk)
+    queue = runner.start_dosage_stream(queue_capacity=40, snps_per_chunk=snps_per_chunk)
     
     ph_headers = ph_headers[1:]    
     # Preallocate device buffers and reuse/slice for smaller final chunks
@@ -376,8 +376,8 @@ def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device=
   
     start_before_loop = time.time()
     record_time_before_loop = start_before_loop - overall_start
-    for chunk_data, meta in tqdm(queue, desc="Processing SNPs"):
-        print(f"queue size :{queue.size()}")
+    for chunk_data, meta in  tqdm(queue, desc="Processing SNPs"):
+        # print(f"queue size :{queue.size()}")
         iteration_start = time.time()
         # Queue wait = time from end of last iteration to start of this iteration
         # Separate first chunk (includes C++ startup) from subsequent chunks

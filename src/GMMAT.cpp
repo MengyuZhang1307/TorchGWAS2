@@ -1,4 +1,5 @@
 #include "GMMAT.h"
+#include <stdexcept>
 
 template<typename T>
 int sign(T t)
@@ -545,7 +546,8 @@ DensMat slice_mat_cols(DensMat const& dm, std::ext::V_int const& ind2)
 
 bool check_convergence(const DensVec& alpha, const DensVec& alpha0, 
                       const DensVec& tau, const DensVec& tau0, 
-                      double tol, size_t& i, int maxiter) 
+                      double tol, size_t& i, int maxiter,
+                      std::ostream* log_stream = nullptr) 
 {
     double max_difference_alpha = ((alpha - alpha0).array().abs() / (alpha.array().abs() + alpha0.array().abs() + tol)).maxCoeff();
     double max_difference_tau   = ((tau - tau0).array().abs() / (tau.  array().abs() + tau0.  array().abs() + tol)).maxCoeff();
@@ -556,7 +558,8 @@ bool check_convergence(const DensVec& alpha, const DensVec& alpha0,
     }
 
     if ((tau.array().abs().maxCoeff()) > pow(tol, -2)) {
-        std::cerr << "Large variance estimate observed in the iterations, model not converged..." << std::endl;
+        std::ostream& out = (log_stream ? *log_stream : std::cerr);
+        out << "Large variance estimate observed in the iterations, model not converged..." << std::endl;
         i = maxiter;
         return true; // Indicating non-convergence
     }
@@ -1241,8 +1244,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
             }
             else
             {
-                std::cerr << "Error: fit_glmm_ai.dtau has no value!" << std::endl;
-                // Handle error, possibly return or throw an exception
+                throw std::runtime_error("Error: fit_glmm_ai.dtau has no value!");
             }
         } 
 
@@ -1377,8 +1379,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
     Glmmkin glmmkin;
     if(method_optim == "Brent")
     {
-        out << "Error: we do not support Brent\n";
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Error: we do not support Brent");
     }
     
     if(method_optim == "AI")
@@ -1426,29 +1427,25 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
         {
             if(ng != 1)
             {
-                std::cerr << "Error: Average Information REML not converged, cannot refit heteroscedastic linear mixed model using Brent or Nelder-Mead methods.\n";
-                exit(EXIT_FAILURE);
+                throw std::runtime_error("Error: Average Information REML not converged, cannot refit heteroscedastic linear mixed model using Brent or Nelder-Mead methods.");
             }
 
             if(m_rand_slope.size() > 0)
             {
-                std::cerr << "Error: Average Information REML not converged, cannot refit random slope model for longitudinal data using Brent or Nelder-Mead methods.\n";
-                exit(EXIT_FAILURE);
+                throw std::runtime_error("Error: Average Information REML not converged, cannot refit random slope model for longitudinal data using Brent or Nelder-Mead methods.");
             }
 
             if(kins_size == 1)
             {
-                std::cerr << "Average Information REML not converged, refitting model using Brent method...\n";
-                std::cerr << "Brent is not available for the time being, stay in touch for updates \n";
-                exit(EXIT_FAILURE);
+                throw std::runtime_error(
+                    "Average Information REML not converged. Requested refit via Brent, but Brent is currently not available."
+                );
             }
         }
     }
     else
     {
-        std::cerr << "The optimization method is not supported for the time being\n";
-        std::cerr << "Stay in touch for any updates\n";
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("The optimization method is not supported for the time being. Stay in touch for any updates.");
     }   
     return glmmkin;
 }
@@ -1474,12 +1471,18 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
                             double tau_max, int tau_region)
 {
     std::ostream& log_out = (log_stream ? *log_stream : std::cout);
+    if(verbose)
+    {
+        log_out << "****************************************************************************\n";
+        log_out << "Start fitting the model for phenotype: " << ph_column_name << "\n";
+        log_out << "****************************************************************************\n";
+    }
     Glmmkin glmmkin;
     SparseInverse sp_missing(cov_copy, kin_add, kin_delim, 
         kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
         pheno_valid_indices, true); 
     m_vkins_sp.push_back(std::move(sp_missing));
-
+    
     { 
         SparseInverse sp(cov_copy, kin_add, kin_delim, //define scop to free kinship space
             kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
@@ -1513,22 +1516,19 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
 
     if(it == v_valid_methods.end())
     {
-        std::cerr << "Error: " << method << " is not in GMMAT valid methods (REML, ML)\n";
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Error: " + method + " is not in GMMAT valid methods (REML, ML)");
     }
 
     if(method ==  "ML" && method_optim == "AI")
     {
-        std::cerr << "Error: " << method << " is not available for " << method_optim << "\n";
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Error: " + method + " is not available for " + method_optim);
     }
 
     if(rand_slope_hdr.size() > 0)
     {
         if(method_optim != "AI")
         {
-            std::cerr << "Error: random slope for longitudinal data is currently only implemented for method.optim \"AI\".";
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("Error: random slope for longitudinal data is currently only implemented for method.optim \"AI\".");
         }
         std::ext::V_string slope_temp = m_vkins_sp[0].cov.m_data_frame.get_header(rand_slope_hdr);
         m_rand_slope = conv_stdVs2dV(slope_temp);
@@ -1551,7 +1551,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     if(verbose)
     {
         log_out << "****************************************************************************\n";
-        log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n \n";
+        log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
     }
     new_y.clear();
     fit_null = gf.convert_2_fit(); 
@@ -1614,8 +1614,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     }
     else if(m_vkins_sp[0].kin.m_null_kin && rand_slope_hdr.size() > 0)
     {
-        std::cerr << "\"random slope\" ignored for cross-sectional data from unrelated individuals...\n";
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("\"random slope\" ignored for cross-sectional data from unrelated individuals.");
     }
     std::ext::V_int group_id;
     if(groups.size() == 0)
