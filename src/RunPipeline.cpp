@@ -29,8 +29,8 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
                                         shared_cov_result.numSelCol, 
                                         shared_cov_result.samSize);   
     }
-    // bgen.get_position_bgen_variant(opt.num_chunks, opt.includeVariantFile,
-    //                                          opt.do_filters);
+   
+    
     bgen_sample_id = bgen.sampleID;
     bgen.filterVariants = opt.do_filters;
     is_dup_id = shared_cov_result.cov_is_duplicated;

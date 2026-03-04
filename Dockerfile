@@ -52,24 +52,24 @@ RUN apt-get update && apt-get install -y \
     libboost-program-options-dev \
     libgmp-dev libmpfr-dev pkg-config
 
-# # Install Eigen
-# RUN cd /tmp && \
-# wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz && \
-# tar -xf eigen-3.4.0.tar.gz && \
-# cp -r eigen-3.4.0/Eigen /usr/local/include/ && \
-# rm -rf *
+# Install Eigen
+RUN cd /tmp && \
+wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz && \
+tar -xf eigen-3.4.0.tar.gz && \
+cp -r eigen-3.4.0/Eigen /usr/local/include/ && \
+rm -rf *
 
-# # Install Armadillo
-# RUN cd /tmp && \
-#     wget https://gitlab.com/conradsnicta/armadillo-code/-/archive/14.0.1/armadillo-code-14.0.1.tar.gz && \
-#     tar -xf armadillo-code-14.0.1.tar.gz && \
-#     cp -r armadillo-code-14.0.1/include /usr/local/include/armadillo && \
-#     rm -rf /tmp/*
+# Install Armadillo
+RUN cd /tmp && \
+    wget https://gitlab.com/conradsnicta/armadillo-code/-/archive/14.0.1/armadillo-code-14.0.1.tar.gz && \
+    tar -xf armadillo-code-14.0.1.tar.gz && \
+    cp -r armadillo-code-14.0.1/include /usr/local/include/armadillo && \
+    rm -rf /tmp/*
 
 # Clone SuiteSparse
 RUN git clone https://github.com/DrTimothyAldenDavis/SuiteSparse.git \
     && cd SuiteSparse \
-    && git checkout v7.12.1
+    && git checkout v7.8.2
 # Create build directory
 WORKDIR /SuiteSparse/build
 # Configure SuiteSparse with static linking - build only essential libraries for GWAS

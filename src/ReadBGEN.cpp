@@ -913,7 +913,65 @@ void Bgen::process_bgen_sample_block(const char sample_file[300], bool use_sampl
         std::cout << "\nERROR: The sample size should be greater than the number of predictors!" <<std::endl;
         exit(1);
     }
-    // Build ID -> BGEN index map (sampleID_all is BGEN order)
+
+
+    // The first column of matcovX is Y
+    MatrixXd matcovX (samSize,(numSelCol+1));
+    for (int i=0; i<samSize; i++){    
+        for (int j=0; j<(numSelCol+1); j++) {
+          matcovX(i,j) =new_covdata_orig [i * (numSelCol+1) +j];
+        }
+    }
+    Eigen::HouseholderQR<MatrixXd> qr;
+    qr.compute(matcovX);
+    Eigen::MatrixXd R = qr.matrixQR();
+    int colR=R.cols();
+    VectorXd diagR (colR);
+    for (int i=0; i<colR; i++){
+        diagR(i)=abs(R(i,i));
+    }
+
+    double sqrtEps =sqrt(std::numeric_limits<double>::epsilon());
+    double maxdiag = *std::max_element( diagR.begin(), diagR.end() ) ;
+    double colinear_cut = abs(maxdiag * sqrtEps);
+    for (int i=0; i<colR; i++){
+        if (abs(diagR(i)) < colinear_cut){
+            excludeCol.push_back(i);    
+        }
+    }
+    matcovX.resize(0,0);
+    R.resize(0,0);
+
+    int NumExcludeCol = excludeCol.size();
+    if (excludeCol.size()>0){        
+        vector <int> remove_colinear;
+        for (int i=0; i<excludeCol.size(); i++){
+            for (int j=0; j<samSize; j++) {
+                remove_colinear.push_back(j * (numSelCol+1) + excludeCol[i]);
+            }
+        }
+
+        numSelCol=numSelCol- excludeCol.size();
+        new_covdata.resize(samSize * (numSelCol+1));
+        vector<double> temp;
+        for (int i=0; i<new_covdata_orig.size(); i++)
+        {
+            if (std::find(remove_colinear.begin(), remove_colinear.end(), i) == remove_colinear.end())
+            {
+                temp.push_back(new_covdata_orig[i]);
+                
+            }
+        }
+        new_covdata = temp;
+    } 
+    else 
+    {
+        new_covdata.resize(samSize * (numSelCol+1));
+        new_covdata = new_covdata_orig;
+    }
+
+    // match_ids --> Map bgen sample ids to the same order as covariate file
+    // To be used for ordering dosage at the same order as samples in covariate file
     if(match_ids)
     {
         std::unordered_map<std::string, int> id2bgen;
