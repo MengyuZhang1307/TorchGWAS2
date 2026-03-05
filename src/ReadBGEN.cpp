@@ -7,6 +7,8 @@
 #include <cstring>
 #include <mutex>
 #include <condition_variable>
+#include "Declars.h"
+
 
 /**************************************
 Helper function to remove extra bytes
@@ -916,8 +918,8 @@ void Bgen::process_bgen_sample_block(const char sample_file[300], bool use_sampl
 
 
     // The first column of matcovX is Y
-    MatrixXd matcovX (samSize,(numSelCol+1));
-    for (int i=0; i<samSize; i++){    
+    MatrixXd matcovX (sam_size,(numSelCol+1));
+    for (int i=0; i<sam_size; i++){    
         for (int j=0; j<(numSelCol+1); j++) {
           matcovX(i,j) =new_covdata_orig [i * (numSelCol+1) +j];
         }
@@ -946,13 +948,13 @@ void Bgen::process_bgen_sample_block(const char sample_file[300], bool use_sampl
     if (excludeCol.size()>0){        
         vector <int> remove_colinear;
         for (int i=0; i<excludeCol.size(); i++){
-            for (int j=0; j<samSize; j++) {
+            for (int j=0; j<sam_size; j++) {
                 remove_colinear.push_back(j * (numSelCol+1) + excludeCol[i]);
             }
         }
 
         numSelCol=numSelCol- excludeCol.size();
-        new_covdata.resize(samSize * (numSelCol+1));
+        new_covdata.resize(sam_size * (numSelCol+1));
         vector<double> temp;
         for (int i=0; i<new_covdata_orig.size(); i++)
         {
@@ -966,7 +968,7 @@ void Bgen::process_bgen_sample_block(const char sample_file[300], bool use_sampl
     } 
     else 
     {
-        new_covdata.resize(samSize * (numSelCol+1));
+        new_covdata.resize(sam_size * (numSelCol+1));
         new_covdata = new_covdata_orig;
     }
 
@@ -1428,5 +1430,6 @@ void bgen13_get_two_vals(const unsigned char* prob_start, uint32_t bit_precision
         *second_val_ptr = prob_start[0] | (prob_start[1] << 8) | (prob_start[2] << 16) | (prob_start[3] << 24);
         break;
     }
-
 }
+
+

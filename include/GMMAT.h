@@ -17,7 +17,7 @@ namespace std
                     int robust, std::vector<string> covSelHeadersName, std::vector<double> phenodata, 
                     std::vector<double> covdata, std::vector<double>* XinvXTX_ret, vector<double>* miu_ret, 
                     vector<double>* resid_ret, double* sigma2_ret, std::vector<double>& beta_ret,
-                    std::vector<double>& Xbeta_ret, bool verbose, std::ostream* log_stream)>;
+                    std::vector<double>& Xbeta_ret, DensMat& cov, bool verbose, std::ostream* log_stream)>;
         using Matrix_variant = std::variant<Mat, SpaMat>;
     }
 }
@@ -202,6 +202,30 @@ class GMMAT
           * @return Glmmkin 
           */
         Glmmkin glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
+                            std::ostream* log_stream = nullptr,
+                            std::string const method = "REML", 
+                            std::string method_optim = "AI", 
+                            int maxiter = 500,
+                            double tol = 1e-5, double tau_min = 1e-5, 
+                            double tau_max = 1e+5, int tau_region = 10);
+        
+        /**
+         * @brief 
+         * 
+         * @param fit_null 
+         * @param group_id 
+         * @param verbose 
+         * @param log_stream 
+         * @param method 
+         * @param method_optim 
+         * @param maxiter 
+         * @param tol 
+         * @param tau_min 
+         * @param tau_max 
+         * @param tau_region 
+         * @return Glmmkin 
+         */
+        Glmmkin glmmkin_fit_cs(Fit fit_null, std::ext::V_int group_id, bool verbose,
                             std::ostream* log_stream = nullptr,
                             std::string const method = "REML", 
                             std::string method_optim = "AI", 

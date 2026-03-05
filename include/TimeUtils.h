@@ -1,5 +1,5 @@
 #pragma once
-
+#include "Declars.h"
 #ifndef TIMEUTILS_H
 #define TIMEUTILS_H
 #include <chrono>

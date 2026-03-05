@@ -4,7 +4,7 @@
 #include "zlib.h"
 #include "ReadFiles.h"
 #include "BoundedQueue.h"
-// #include "ParallelFileReader.h"
+
 using uchar = unsigned char;
 class Bgen 
 {
@@ -29,7 +29,7 @@ class Bgen
         //AllsampleIDs before matching
         std::ext::V_string sampleID_all;
         std::ext::V_int bgen_to_out;
-        // std::ext::V_double  new_covdata;//used for update collinear covariates
+        std::ext::V_double  new_covdata;//used for update collinear covariates
         std::vector<long int> include_idx;
         std::vector <long int> variant_pos;
         std::vector<unsigned int> includeVariantIndex;

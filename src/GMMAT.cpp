@@ -1055,7 +1055,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
 
     if(m_offset.size() < y_size) 
     {
-        m_offset = DensVec::Constant(y_size, 0); //we cannot check null in cpp
+        m_offset = DensVec::Constant(y_size, 0); 
     }
 
     m_tau = DensVec::Constant(m_vkins_sp.size() + m_group_idx.size(), 0);
@@ -1123,7 +1123,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
             sigma = sigma + m_tau(i + ng) * curr_kin_spmat;
         }
         
-        glmmkin.fit.sigma_i =  SparseInverse::inv_spamat(sigma);
+        glmmkin.fit.dmu_deta; =  SparseInverse::inv_spamat(sigma);
         glmmkin.fit.sigma_ix = crossprod(glmmkin.fit.sigma_i, m_X);
         DensMat xsigma_ix = crossprod(m_X, glmmkin.fit.sigma_ix);
         glmmkin.fit.cov = SparseInverse::inv(xsigma_ix);
@@ -1346,9 +1346,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
     else //For cross-sectional
     {
         SpaMat kin = m_vkins_sp[0].get_spmat();
-        // double kin_diag = kin.diagonal().sum();
         auto fp_c1 = (glmmkin.fit.sigma_i.cwiseProduct(kin)).sum();
-        // auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, kin) * glmmkin.fit.sigma_ix)).sum();
         auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, crossprod(kin, glmmkin.fit.sigma_ix)))).sum();
         auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
         glmmkin.scaled_residuals_c1 = c1 * glmmkin.scaled_residuals;
@@ -1450,6 +1448,39 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
     return glmmkin;
 }
 
+Glmmkin GMMAT::glmmkin_fit_cs(Fit fit_null, std::ext::V_int group_id, bool verbose,
+                            std::ostream* log_stream,
+                            std::string const method, 
+                            std::string method_optim,
+                            int maxiter,
+                            double tol, double tau_min, 
+                            double tau_max, int tau_region)
+{
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
+    Glmmkin glmmkin;
+    glmmkin.fit.alpha = fit_null.alpha;
+    // m_tau = DensVec::Constant(m_vkins_sp.size() + m_group_idx.size(), 0);
+    // m_fixtau.resize(m_vkins_sp.size() + m_group_idx.size(), 0);  
+    fit_null.calc_dmu_deta(m_family_t, y_size);
+    glmmkin.fit = fit_null;
+    if(m_offset.size() < y_size) 
+    {
+        m_offset = DensVec::Constant(y_size, 0); 
+    }
+    m_Y = fit_null.eta - m_offset + (m_y - glmmkin.fit.mu).cwiseQuotient(glmmkin.fit.dmu_deta); 
+    m_sqrtW = glmmkin.fit.calc_sqrtW();
+    glmmkin.fit.W = glmmkin.fit.dmu_deta;
+    glmmkin.residuals = m_y - glmmkin.fit.mu;
+    m_ta[0] = fit_null.sigma2;
+    //Fil Sigma
+    std::ext::V_double diag_sigma(y_size); // vector of diagonal element of Sigma--
+    diag_sigma = glmmkin.fit.W / m_ta[0];
+    glmmkin.fit.sigma_i = details::diag(diag_sigma);
+    glmmkin.fit.sigma_ix = m_X / m_ta[0] ;// W is all one
+
+
+}
+
 glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add, 
                             const char kin_delim, 
                             const double kin_diag_value, const char cov_delim, 
@@ -1484,7 +1515,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     m_vkins_sp.push_back(std::move(sp_missing));
     
     { 
-        SparseInverse sp(cov_copy, kin_add, kin_delim, //define scop to free kinship space
+        SparseInverse sp(cov_copy, kin_add, kin_delim, //define scope to free kinship space
             kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
             pheno_valid_indices, false); //sp without removing missing pheno value
         if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))
@@ -1545,17 +1576,23 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     remove_collinear_columns(m_X, cov_selected_hdrs, log_stream);
     std::ext::V_double cov_data = conv_dm2stdV(m_X); 
     m_n_sel_col = cov_selected_hdrs.size();
+    
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
-                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, verbose, log_stream); 
+                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, glmmkin.fit.cov, verbose, log_stream); 
     log_out << std::flush;
+    
     if(verbose)
     {
         log_out << "****************************************************************************\n";
         log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
     }
+    
     new_y.clear();
     fit_null = gf.convert_2_fit(); 
-    if(m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr))
+
+
+    bool is_dup = m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr);
+    if(is_dup)
     {
         log_out << "Duplicated id detected...\nAssuming longitudinal data with repeated measures...\n";
         if(!m_vkins_sp[0].kin.m_null_kin) // if there is a kinship file add another matrix
@@ -1616,21 +1653,30 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     {
         throw std::runtime_error("\"random slope\" ignored for cross-sectional data from unrelated individuals.");
     }
-    std::ext::V_int group_id;
-    if(groups.size() == 0)
-    {
-        group_id = std::ext::V_int (y_size, 1);
+    
+    // Cross-sectional data with no kinship
+    if(m_vkins_sp[0].kin.m_null_kin && !is_dup)
+    { 
+        glmmkin = glmmkin_fit_cs(fit_null, group_id, verbose, log_stream, method, method_optim, 
+                    maxiter, tol, tau_min, tau_max, tau_region);
     }
-    else
+    else 
     {
-        // Convert to vector of int as groups is a vector of string
-        group_id = conv_stdvs2stdvi(m_vkins_sp[0].cov.m_data_frame.get_header(groups));
-        
+        std::ext::V_int group_id;
+        if(groups.size() == 0)
+        {
+            group_id = std::ext::V_int (y_size, 1);
+        }
+        else
+        {
+            // Convert to vector of int as groups is a vector of string
+            group_id = conv_stdvs2stdvi(m_vkins_sp[0].cov.m_data_frame.get_header(groups));
+            
+        }
+
+        glmmkin = glmmkin_fit(fit_null, group_id, verbose, log_stream, method, method_optim, 
+                            maxiter, tol, tau_min, tau_max, tau_region);
     }
-
-    glmmkin = glmmkin_fit(fit_null, group_id, verbose, log_stream, method, method_optim, 
-                          maxiter, tol, tau_min, tau_max, tau_region);
-
     glmmkin_residuals glmmkin_results;
     glmmkin_results.id_include = unique_id(m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr));
     std::ext::V_double res_c1(

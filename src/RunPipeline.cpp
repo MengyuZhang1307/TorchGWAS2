@@ -29,8 +29,21 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
                                         shared_cov_result.numSelCol, 
                                         shared_cov_result.samSize);   
     }
-   
     
+    std::ext::V_string new_cov_hdrs;
+    for (int i=0; i< opt.covariates.size(); i++)
+    {
+        if (std::find(bgen.excludeCol.begin(), bgen.excludeCol.end(), (i+1)) == bgen.excludeCol.end()) // i+1 as first col is intercept
+        {
+            
+            new_cov_hdrs.push_back(opt.covariates[i]);
+            
+        }
+                    
+    }
+
+    opt.covariates = new_cov_hdrs;
+    new_cov_hdrs.resize(0);
     bgen_sample_id = bgen.sampleID;
     bgen.filterVariants = opt.do_filters;
     is_dup_id = shared_cov_result.cov_is_duplicated;
@@ -91,15 +104,15 @@ CovariateReadResult GEMRunner::read_covariate_data()
     bool& cov_is_duplicated = result.cov_is_duplicated;
     cov_is_duplicated = false;
 
-    int numExpSelCol = opt.exposures.size();
-    int numIntSelCol = opt.interactions.size();
-
-    for (int i = numIntSelCol - 1; i >= 0; --i)
-        opt.covariates.insert(opt.covariates.begin(), opt.interactions[i]);
-    for (int i = numExpSelCol - 1; i >= 0; --i)
-        opt.covariates.insert(opt.covariates.begin(), opt.exposures[i]);
-
-    result.numSelCol = opt.covariates.size() - numExpSelCol - numIntSelCol;
+    // int numExpSelCol = opt.exposures.size();
+    // int numIntSelCol = opt.interactions.size();
+    // for (int i = numIntSelCol - 1; i >= 0; --i)
+    //     opt.covariates.insert(opt.covariates.begin(), opt.interactions[i]);
+    // for (int i = numExpSelCol - 1; i >= 0; --i)
+    //     opt.covariates.insert(opt.covariates.begin(), opt.exposures[i]);
+    // result.numSelCol = opt.covariates.size() + numExpSelCol + numIntSelCol;
+    
+    result.numSelCol = opt.covariates.size();
     std::ext::V_int colSelVec(opt.covariates.size());
 
     std::ifstream fincov(opt.cov_add);
@@ -134,10 +147,10 @@ CovariateReadResult GEMRunner::read_covariate_data()
             throw std::runtime_error("ERROR: Random slope column not found");
     }
 
-    for (const auto& h : opt.exposures)
-        if (!colNames.count(h)) throw std::runtime_error("ERROR: Exposure column not found: " + h);
-    for (const auto& h : opt.interactions)
-        if (!colNames.count(h)) throw std::runtime_error("ERROR: Interaction column not found: " + h);
+    // for (const auto& h : opt.exposures)
+    //     if (!colNames.count(h)) throw std::runtime_error("ERROR: Exposure column not found: " + h);
+    // for (const auto& h : opt.interactions)
+    //     if (!colNames.count(h)) throw std::runtime_error("ERROR: Interaction column not found: " + h);
     for (size_t i = 0; i < opt.covariates.size(); ++i) 
     {
         if (!colNames.count(opt.covariates[i]))

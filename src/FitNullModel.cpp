@@ -537,7 +537,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
                 int robust, std::ext::V_string covariates, std::ext::V_double phenodata, 
                 std::ext::V_double covdata, std::ext::V_double* XinvXTX_ret, std::ext::V_double* miu_ret, 
                 std::ext::V_double* resid_ret, double* sigma2_ret, std::ext::V_double& beta_ret,
-                std::ext::V_double& Xbeta_ret, bool verbose, std::ostream* log_stream)
+                std::ext::V_double& Xbeta_ret, DensMat& cov, bool verbose, std::ostream* log_stream)
 {
     std::ostream& out = (log_stream ? *log_stream : std::cout);
     double* phenoY = &phenodata[0];
@@ -697,6 +697,11 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         beta_ret[i] = beta[i];
     } 
     
+    Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
+    cov_map(XTransX, numSelCol + 1, numSelCol + 1);
+
+    cov = cov_map;
+
     delete[] XTransX;
     XTransX = nullptr; 
     delete[] XTransY;
