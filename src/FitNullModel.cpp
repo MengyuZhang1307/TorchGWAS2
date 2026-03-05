@@ -388,8 +388,8 @@ void NullModel::fit_nullmodel(bool kin_flag,
         std::ext::V_string& bgen_sample_id,
         bool is_dup_id)
 {
-    if (kin_flag || is_dup_id)
-    {
+    // if (kin_flag || is_dup_id)
+    // {
         auto start_time_gmmat = std::chrono::high_resolution_clock::now();
         vector <string> cov_headers(opt.covariates);
         cov_headers.insert(cov_headers.begin(), opt.sampleid_header_name);
@@ -415,13 +415,13 @@ void NullModel::fit_nullmodel(bool kin_flag,
         auto end_time_gmmat = std::chrono::high_resolution_clock::now();
         printExecutionTime(start_time_gmmat, end_time_gmmat);
         cout << std::flush;
-    }  
-    else
-    {
-        std::cerr << "Please make sure you have repetaed measure data or define a kinship\n";
-        std::exit(EXIT_FAILURE);
+    // }  
+    // else
+    // {
+    //     std::cerr << "Please make sure you have repetaed measure data or define a kinship\n";
+    //     std::exit(EXIT_FAILURE);
         
-    } 
+    // } 
 }
  
 
@@ -620,7 +620,8 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
     // X*[invert (XTransX)]
     std::ext::V_double XinvXTXvec(samSize * (numSelCol + 1));
     double* XinvXTX = &XinvXTXvec[0];
-    if (phenoType == 1) {
+    if (phenoType == 1) 
+    {
         double* WX = new double[samSize * (numSelCol + 1)];
         for (int i = 0; i < samSize; i++) {
             miu[i] = exp(Xbeta[i]) / (1.0 + exp(Xbeta[i]));
@@ -638,19 +639,20 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
 
         out << "Logistic regression reaches convergence after " << iter << " steps...\n";
     }
-    else {
+    else 
+    {
         matmatprod(covX, XTransX, XinvXTX, samSize, numSelCol + 1, numSelCol + 1);
     }
 
 
     // residual = Y - X * beta
     double sigma2 = 0;
-    for (int i = 0; i < samSize; i++) {
+    for (int i = 0; i < samSize; i++) 
+    {
         residvec[i] = phenoY[i] - Xbeta[i];
         sigma2 += residvec[i] * residvec[i];
     }
     double* resid = &residvec[0];
-
     // sqr(sigma) = transpose(resid)*resid/[samSize-(numSelCol+1)]
     sigma2 = sigma2 / (samSize - (numSelCol + 1));
     if (phenoType == 1) sigma2 = 1.0;

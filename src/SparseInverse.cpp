@@ -33,7 +33,6 @@ SparseInverse::SparseInverse(Cov &cov_copy, const std::string kin_add, const cha
         // std::cout << "Number of observation in covariate file after matching IDs with phenotype is: " << cov.m_data_frame.n_rows() << "\n";
         // std::cout << "****************************************************************************\n";
     }
-
     set_spmat();
 }
 

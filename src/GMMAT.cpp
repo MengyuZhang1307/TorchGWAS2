@@ -307,7 +307,12 @@ Fit GEMFit::convert_2_fit()
     fit.mu = conv_stdV2dv(mu);
     fit.alpha = conv_stdV2dv(alpha);
     fit.eta = conv_stdV2dv(eta);
-
+    fit.sigma2 = sigma2;
+    fit.cov = std::move(cov);
+    mu.clear();
+    alpha.clear();
+    eta.clear();
+    cov.resize(0,0);
     return fit;
 }
 
@@ -1123,7 +1128,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
             sigma = sigma + m_tau(i + ng) * curr_kin_spmat;
         }
         
-        glmmkin.fit.dmu_deta; =  SparseInverse::inv_spamat(sigma);
+        glmmkin.fit.sigma_i =  SparseInverse::inv_spamat(sigma);
         glmmkin.fit.sigma_ix = crossprod(glmmkin.fit.sigma_i, m_X);
         DensMat xsigma_ix = crossprod(m_X, glmmkin.fit.sigma_ix);
         glmmkin.fit.cov = SparseInverse::inv(xsigma_ix);
@@ -1448,37 +1453,56 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
     return glmmkin;
 }
 
-Glmmkin GMMAT::glmmkin_fit_cs(Fit fit_null, std::ext::V_int group_id, bool verbose,
-                            std::ostream* log_stream,
-                            std::string const method, 
-                            std::string method_optim,
-                            int maxiter,
-                            double tol, double tau_min, 
-                            double tau_max, int tau_region)
+Glmmkin GMMAT::glmmkin_fit_cs(Fit& fit_null, bool verbose,
+                            std::ostream* log_stream)
 {
     std::ostream& out = (log_stream ? *log_stream : std::cout);
     Glmmkin glmmkin;
+    int y_size = m_y.size();
+
     glmmkin.fit.alpha = fit_null.alpha;
     // m_tau = DensVec::Constant(m_vkins_sp.size() + m_group_idx.size(), 0);
     // m_fixtau.resize(m_vkins_sp.size() + m_group_idx.size(), 0);  
     fit_null.calc_dmu_deta(m_family_t, y_size);
+
     glmmkin.fit = fit_null;
     if(m_offset.size() < y_size) 
     {
         m_offset = DensVec::Constant(y_size, 0); 
     }
+    
     m_Y = fit_null.eta - m_offset + (m_y - glmmkin.fit.mu).cwiseQuotient(glmmkin.fit.dmu_deta); 
     m_sqrtW = glmmkin.fit.calc_sqrtW();
     glmmkin.fit.W = glmmkin.fit.dmu_deta;
     glmmkin.residuals = m_y - glmmkin.fit.mu;
-    m_ta[0] = fit_null.sigma2;
-    //Fil Sigma
-    std::ext::V_double diag_sigma(y_size); // vector of diagonal element of Sigma--
-    diag_sigma = glmmkin.fit.W / m_ta[0];
-    glmmkin.fit.sigma_i = details::diag(diag_sigma);
-    glmmkin.fit.sigma_ix = m_X / m_ta[0] ;// W is all one
 
+    m_tau = DensVec::Constant(m_vkins_sp.size(), 0);
+    m_tau[0] = fit_null.sigma2;
+    
+    //Fill Sigma
+    DensVec diag_sigma(y_size); // vector of diagonal element of Sigma--
+    diag_sigma = glmmkin.fit.W / m_tau[0];
+    glmmkin.fit.sigma_i = diag_sigma.asDiagonal();
+    glmmkin.fit.sigma_ix = crossprod(glmmkin.fit.sigma_i, m_X);
+    SpaMat kin = m_vkins_sp[0].get_spmat();
+    auto fp_c1 = (glmmkin.fit.sigma_i.cwiseProduct(kin)).sum();
+    auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, crossprod(kin, glmmkin.fit.sigma_ix)))).sum();
+    auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
+    glmmkin.scaled_residuals_c1 = c1 * glmmkin.scaled_residuals;
+    //pad scaled residuals to the size of non missing kinship
+    size_t scaled_res_size = glmmkin.scaled_residuals.size();
 
+    if (spm_nomiss_dim > scaled_res_size) //Resize to the size of non-missing kinship
+    {
+        glmmkin.scaled_residuals.conservativeResize(spm_nomiss_dim);
+        glmmkin.scaled_residuals.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
+    }
+    
+    std::cout << __LINE__ << std::endl;
+    double sum_squ_scaled_residuals = glmmkin.scaled_residuals.squaredNorm();
+    glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (glmmkin.scaled_residuals.size() - 1));
+    
+    return glmmkin;
 }
 
 glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add, 
@@ -1508,11 +1532,13 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         log_out << "Start fitting the model for phenotype: " << ph_column_name << "\n";
         log_out << "****************************************************************************\n";
     }
+
     Glmmkin glmmkin;
-    SparseInverse sp_missing(cov_copy, kin_add, kin_delim, 
+
+    SparseInverse sp_nomissing(cov_copy, kin_add, kin_delim, 
         kin_diag_value, cov_delim, bgen_sample_id, missing_key, 
         pheno_valid_indices, true); 
-    m_vkins_sp.push_back(std::move(sp_missing));
+    m_vkins_sp.push_back(std::move(sp_nomissing));
     
     { 
         SparseInverse sp(cov_copy, kin_add, kin_delim, //define scope to free kinship space
@@ -1533,7 +1559,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     }
     
     std::ext::V_double new_y;
-    std::ext::V_string nomissing_y;
+    // std::ext::V_string nomissing_y;
     //Remove lines where had missing data in pheno file
     for(auto const& idx : pheno_valid_indices)
     {
@@ -1565,7 +1591,6 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         m_rand_slope = conv_stdVs2dV(slope_temp);
     }
 
-    Fit fit_null; 
     auto pair = m_vkins_sp[0].cov.check_binary(new_y);
     m_family_t = pair.first;
     m_link = pair.second;
@@ -1578,18 +1603,18 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     m_n_sel_col = cov_selected_hdrs.size();
     
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
-                 &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, glmmkin.fit.cov, verbose, log_stream); 
-    log_out << std::flush;
-    
-    if(verbose)
-    {
-        log_out << "****************************************************************************\n";
-        log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
-    }
-    
+        &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, gf.cov, verbose, log_stream); 
+        log_out << std::flush;
+        
+        if(verbose)
+        {
+            log_out << "****************************************************************************\n";
+            log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
+        }
+        
     new_y.clear();
+    Fit fit_null; 
     fit_null = gf.convert_2_fit(); 
-
 
     bool is_dup = m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr);
     if(is_dup)
@@ -1657,8 +1682,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     // Cross-sectional data with no kinship
     if(m_vkins_sp[0].kin.m_null_kin && !is_dup)
     { 
-        glmmkin = glmmkin_fit_cs(fit_null, group_id, verbose, log_stream, method, method_optim, 
-                    maxiter, tol, tau_min, tau_max, tau_region);
+        glmmkin = glmmkin_fit_cs(fit_null, verbose, log_stream);
     }
     else 
     {
@@ -1673,14 +1697,16 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
             group_id = conv_stdvs2stdvi(m_vkins_sp[0].cov.m_data_frame.get_header(groups));
             
         }
-
+        // glmmkin.fit.cov.resize(0);
         glmmkin = glmmkin_fit(fit_null, group_id, verbose, log_stream, method, method_optim, 
                             maxiter, tol, tau_min, tau_max, tau_region);
     }
+
+    std::cout << __LINE__ << std::endl;
+
     glmmkin_residuals glmmkin_results;
     glmmkin_results.id_include = unique_id(m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr));
-    std::ext::V_double res_c1(
-                            glmmkin.scaled_residuals_c1.data(),
+    std::ext::V_double res_c1(glmmkin.scaled_residuals_c1.data(),
                             glmmkin.scaled_residuals_c1.data() + glmmkin.scaled_residuals_c1.size()
     );
     glmmkin_results.scaled_residuals_c1 = res_c1;

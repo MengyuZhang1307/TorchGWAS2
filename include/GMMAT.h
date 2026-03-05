@@ -40,6 +40,11 @@ struct Fit
      */
     DensVec mu;
     /**
+     * @brief dispersion value
+     * 
+     */
+    double sigma2;
+    /**
      * @brief derivative of mu in respect of eta
      * 
      */
@@ -95,7 +100,7 @@ struct Glmmkin
     //std::vector<bool> converged;
     bool converged;
     Fit fit;
-	double sigma2;
+	// double sigma2;
 
 };
 struct glmmkin_residuals
@@ -117,6 +122,7 @@ struct  GEMFit
     double sigma2; // To return the gf.sigma2 from fitnull
     std::ext::V_double alpha;
     std::ext::V_double eta;
+    DensMat cov;
     /**
      * @brief A function to convert data and parameters in GEMFit to the ones in Fit structure.
      * 
@@ -213,25 +219,12 @@ class GMMAT
          * @brief 
          * 
          * @param fit_null 
-         * @param group_id 
          * @param verbose 
          * @param log_stream 
-         * @param method 
-         * @param method_optim 
-         * @param maxiter 
-         * @param tol 
-         * @param tau_min 
-         * @param tau_max 
-         * @param tau_region 
          * @return Glmmkin 
          */
-        Glmmkin glmmkin_fit_cs(Fit fit_null, std::ext::V_int group_id, bool verbose,
-                            std::ostream* log_stream = nullptr,
-                            std::string const method = "REML", 
-                            std::string method_optim = "AI", 
-                            int maxiter = 500,
-                            double tol = 1e-5, double tau_min = 1e-5, 
-                            double tau_max = 1e+5, int tau_region = 10);
+        Glmmkin glmmkin_fit_cs(Fit& fit_null,  bool verbose,
+                            std::ostream* log_stream = nullptr);
         /**
          * @brief 
          * 
