@@ -203,8 +203,8 @@ double calc_variance(DensVec const& dv)
     int size = dv.size();
     if(size < 2)
     {
-            std::cout << "Warning: Variance calculation requires at least two elements.\n";
-            return variance;
+        std::cerr << "Warning: Variance calculation requires at least two elements.\n";
+        return variance;
     }
 
     double mean = dv.mean();
@@ -1184,7 +1184,7 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
 
     size_t i;
     
-    for(i = 1; i < maxiter; ++i)
+    for(i = 1; i <= maxiter; ++i)
     {
 
         alpha0 = glmmkin.fit.alpha;
@@ -1270,6 +1270,16 @@ Glmmkin GMMAT::glmmkin_ai(Fit fit_null, bool verbose,
         //     std::cout << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
         // }
         if(check_convergence(glmmkin.fit.alpha, alpha0, m_tau, tau0, tol, i, maxiter)) 
+        {
+            if(verbose)
+            {
+                out << "iteration: " << i << '\n';
+                out << "Variance component estimates (m_tau):\n" << m_tau << '\n';
+                out << "Fixed-effect coefficient (alpha):\n" << glmmkin.fit.alpha << '\n';
+            }
+            break;
+        }
+        if(i == maxiter) 
         {
             if(verbose)
             {
@@ -1412,7 +1422,7 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
 
         while(fixtau_new != fixtau_old || (fixrho_new.size() > 0 && fixrho_new != fixrho_old))
         {
-            std::cerr << "Warning: Variance estimate on the boundary of the parameter space observed, refitting model...\n";
+            out << "Warning: Variance estimate on the boundary of the parameter space observed, refitting model...\n";
             fixtau_old = fixtau_new;
 
             if(m_covariance_idx.size() > 0)
@@ -1428,22 +1438,8 @@ Glmmkin GMMAT::glmmkin_fit(Fit fit_null, std::ext::V_int group_id, bool verbose,
 
         if(!glmmkin.converged)
         {
-            if(ng != 1)
-            {
-                throw std::runtime_error("Error: Average Information REML not converged, cannot refit heteroscedastic linear mixed model using Brent or Nelder-Mead methods.");
-            }
-
-            if(m_rand_slope.size() > 0)
-            {
-                throw std::runtime_error("Error: Average Information REML not converged, cannot refit random slope model for longitudinal data using Brent or Nelder-Mead methods.");
-            }
-
-            if(kins_size == 1)
-            {
-                throw std::runtime_error(
-                    "Average Information REML not converged. Requested refit via Brent, but Brent is currently not available."
-                );
-            }
+            out << "Warning: Average Information REML not converged the last iteration"
+                << " is used to calculate the correction factors. \n";
         }
     }
     else
@@ -1461,8 +1457,6 @@ Glmmkin GMMAT::glmmkin_fit_cs(Fit& fit_null, bool verbose,
     int y_size = m_y.size();
 
     glmmkin.fit.alpha = fit_null.alpha;
-    // m_tau = DensVec::Constant(m_vkins_sp.size() + m_group_idx.size(), 0);
-    // m_fixtau.resize(m_vkins_sp.size() + m_group_idx.size(), 0);  
     fit_null.calc_dmu_deta(m_family_t, y_size);
 
     glmmkin.fit = fit_null;
@@ -1474,10 +1468,15 @@ Glmmkin GMMAT::glmmkin_fit_cs(Fit& fit_null, bool verbose,
     m_Y = fit_null.eta - m_offset + (m_y - glmmkin.fit.mu).cwiseQuotient(glmmkin.fit.dmu_deta); 
     m_sqrtW = glmmkin.fit.calc_sqrtW();
     glmmkin.fit.W = glmmkin.fit.dmu_deta;
-    glmmkin.residuals = m_y - glmmkin.fit.mu;
-
+    glmmkin.residuals = m_y.cast<double>() - glmmkin.fit.mu;
+    
     m_tau = DensVec::Constant(m_vkins_sp.size(), 0);
     m_tau[0] = fit_null.sigma2;
+    
+    DensVec fit0W = DensVec::Constant(glmmkin.fit.W.size(), 1);
+    //fill scaled_residuals
+    glmmkin.scaled_residuals =  glmmkin.residuals.array() * fit0W.array() / m_tau[0];
+    
     
     //Fill Sigma
     DensVec diag_sigma(y_size); // vector of diagonal element of Sigma--
@@ -1485,6 +1484,7 @@ Glmmkin GMMAT::glmmkin_fit_cs(Fit& fit_null, bool verbose,
     glmmkin.fit.sigma_i = diag_sigma.asDiagonal();
     glmmkin.fit.sigma_ix = crossprod(glmmkin.fit.sigma_i, m_X);
     SpaMat kin = m_vkins_sp[0].get_spmat();
+    
     auto fp_c1 = (glmmkin.fit.sigma_i.cwiseProduct(kin)).sum();
     auto sp_c1 = (glmmkin.fit.cov.cwiseProduct(crossprod(glmmkin.fit.sigma_ix, crossprod(kin, glmmkin.fit.sigma_ix)))).sum();
     auto c1 = spm_diag_nomiss / (fp_c1 - sp_c1);
@@ -1498,10 +1498,8 @@ Glmmkin GMMAT::glmmkin_fit_cs(Fit& fit_null, bool verbose,
         glmmkin.scaled_residuals.tail(spm_nomiss_dim - scaled_res_size).setZero();  // zero-fill only the new part
     }
     
-    std::cout << __LINE__ << std::endl;
     double sum_squ_scaled_residuals = glmmkin.scaled_residuals.squaredNorm();
     glmmkin.c2 = c1 * (sum_squ_scaled_residuals / (glmmkin.scaled_residuals.size() - 1));
-    
     return glmmkin;
 }
 
@@ -1604,13 +1602,13 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
         &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, gf.cov, verbose, log_stream); 
-        log_out << std::flush;
+    log_out << std::flush;
         
-        if(verbose)
-        {
-            log_out << "****************************************************************************\n";
-            log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
-        }
+    if(verbose)
+    {
+        log_out << "****************************************************************************\n";
+        log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
+    }
         
     new_y.clear();
     Fit fit_null; 
@@ -1701,8 +1699,6 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
         glmmkin = glmmkin_fit(fit_null, group_id, verbose, log_stream, method, method_optim, 
                             maxiter, tol, tau_min, tau_max, tau_region);
     }
-
-    std::cout << __LINE__ << std::endl;
 
     glmmkin_residuals glmmkin_results;
     glmmkin_results.id_include = unique_id(m_vkins_sp[0].cov.m_data_frame.get_header(m_vkins_sp[0].cov.m_sam_id_hdr));

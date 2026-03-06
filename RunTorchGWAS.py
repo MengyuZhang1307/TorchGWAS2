@@ -127,7 +127,7 @@ def parse_args():
                 ))
 
     parser.add_argument("--parquet", nargs="+", default=[], help="Input TGWAS parquet file(s) for step3.")
-    return parser.parse_args()
+    return parser.parse_args() #built-in python method
 
 def build_logger_and_paths(args):
     """Only handles logger + dir/base names based on --out."""
@@ -135,6 +135,16 @@ def build_logger_and_paths(args):
     base_name = os.path.splitext(os.path.basename(args.out))[0]
     log_file = os.path.join(dir_name, base_name + ".log")
     return  dir_name, base_name
+
+def validate_args(args):
+    """
+    Ensure kinship-related options are only used when --kin-file is provided.
+    """
+    if not args.kin_file:
+        if args.kin_delim != "," or args.kin_diag != 1.0:
+            logging.error("--kin-delim or --kin-diag cannot be used without --kin-file.")
+            raise SystemExit(2)
+
 
 def build_conf_allsteps(args):
     """Config for all"""
@@ -372,16 +382,19 @@ def main():
     faulthandler.enable(file=crash_fp, all_threads=True)
     crash_fp.write("\n==== crash log start ====\n")
     crash_fp.flush()
+    
     try:
         dir_name, base_name = build_logger_and_paths(args)
         log_file = os.path.join(dir_name, base_name + ".log")
         if args.step == "all":
             setup_step1_log(log_file, mode="w")
+            validate_args(args)
             run_all(dir_name, base_name, args, log_file)
 
         # Step-specific requirements
         if args.step == "step1":
             setup_step1_log(log_file, mode="w")
+            validate_args(args)
             logging.info("%s", "*" * 80)
             logging.info("STEP 1: fitting null model...")
             if getattr(args, "convert", False):

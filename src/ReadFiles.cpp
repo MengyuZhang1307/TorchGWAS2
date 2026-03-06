@@ -43,7 +43,7 @@ std::ext::V_string  DataFrame::read_lines(std::string_view path)
 
     if(ifs.fail())
     {
-        std::cout << "Error in reading file " << path << ".\nPlease check your inputs.\n";
+        std::cerr << "Error in reading file " << path << ".\nPlease check your inputs.\n";
         exit(EXIT_FAILURE);
     }
 
@@ -213,7 +213,7 @@ std::ext::V_string DataFrame::get_header(std::string const& hdr) const
     } 
     else 
     {
-        std::cout << "Error: Header " << hdr << " not found. It must be one of the variables in the submitted file\n";
+        std::cerr << "Error: Header " << hdr << " not found. It must be one of the variables in the submitted file\n";
         exit(EXIT_FAILURE); // Return an empty vector
     }
 }

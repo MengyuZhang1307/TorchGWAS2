@@ -388,117 +388,34 @@ void NullModel::fit_nullmodel(bool kin_flag,
         std::ext::V_string& bgen_sample_id,
         bool is_dup_id)
 {
-    // if (kin_flag || is_dup_id)
-    // {
-        auto start_time_gmmat = std::chrono::high_resolution_clock::now();
-        vector <string> cov_headers(opt.covariates);
-        cov_headers.insert(cov_headers.begin(), opt.sampleid_header_name);
-        
-        if(opt.random_slope_header_name.size() > 0)
+    auto start_time_gmmat = std::chrono::high_resolution_clock::now();
+    vector <string> cov_headers(opt.covariates);
+    cov_headers.insert(cov_headers.begin(), opt.sampleid_header_name);
+    
+    if(opt.random_slope_header_name.size() > 0)
+    {
+        if(std::find(cov_headers.begin(), cov_headers.end(), opt.random_slope_header_name) == cov_headers.end())
         {
-            if(std::find(cov_headers.begin(), cov_headers.end(), opt.random_slope_header_name) == cov_headers.end())
-            {
-                std::cerr << "Warning: The random slope variable '" << opt.random_slope_header_name << "' was not found among the covariates.\n";
-                exit(EXIT_FAILURE);
-            }
-        }           
-     
-        process_gmmat(opt.kin_add, opt.cov_add, opt.kin_delim,
-                        opt.kin_diag, opt.cov_delim, opt.sampleid_header_name, 
-                        cov_headers, bgen_sample_id, opt.missing_key,
-                        opt.threads, fitNullModel2, 
-                        opt.covariates, opt.random_slope_header_name, 
-                        opt.outfile);
-        cout << "\nEnd of fitting null model\n";
-        cout << "****************************************************************************\n";
-        cout << "calculating the duration of fitting null model...\n";
-        auto end_time_gmmat = std::chrono::high_resolution_clock::now();
-        printExecutionTime(start_time_gmmat, end_time_gmmat);
-        cout << std::flush;
-    // }  
-    // else
-    // {
-    //     std::cerr << "Please make sure you have repetaed measure data or define a kinship\n";
-    //     std::exit(EXIT_FAILURE);
-        
-    // } 
+            std::cerr << "Warning: The random slope variable '" << opt.random_slope_header_name << "' was not found among the covariates.\n";
+            exit(EXIT_FAILURE);
+        }
+    }           
+    
+    process_gmmat(opt.kin_add, opt.cov_add, opt.kin_delim,
+                    opt.kin_diag, opt.cov_delim, opt.sampleid_header_name, 
+                    cov_headers, bgen_sample_id, opt.missing_key,
+                    opt.threads, fitNullModel2, 
+                    opt.covariates, opt.random_slope_header_name, 
+                    opt.outfile);
+    cout << "\nEnd of fitting null model\n";
+    cout << "****************************************************************************\n";
+    cout << "calculating the duration of fitting null model...\n";
+    auto end_time_gmmat = std::chrono::high_resolution_clock::now();
+    printExecutionTime(start_time_gmmat, end_time_gmmat);
+    cout << std::flush;
+
 }
  
-
-/**
- * @brief perfom centering
- * 
- * @param center 
- * @param scale 
- * @param samSize 
- * @param numSelCol 
- * @param covdata 
- * @param covdata_ret 
- */
-void center(int center, int scale, int samSize, int numSelCol, std::ext::V_double covdata, std::ext::V_double* covdata_ret) 
-{
-    std::ext::V_double tmp1(samSize, 1);
-    double* tmpMean = new double[numSelCol + 1];
-    std::ext::V_double tmpSD(numSelCol + 1);
-    if (center) 
-    {
-        matmatprod(&tmp1[0], &covdata[0], tmpMean, 1, samSize, numSelCol + 1);
-        if (!scale) {
-            cout << "Centering without rescaling..." << endl;
-            for (int i = 1; i < numSelCol + 1; i++) {
-                tmpMean[i] /= double(samSize * 1.0);
-                tmpSD[i] = 1.0;
-            }
-        }
-        else {
-            cout << "Centering and rescaling..." << endl;
-            for (int i = 1; i < numSelCol + 1; i++) {
-                tmpMean[i] /= double(samSize * 1.0);
-            }
-            for (int i = 0; i < samSize; i++) {
-                for (int j = 1; j < numSelCol + 1; j++) {
-                    tmpSD[j] += pow(covdata[i * (numSelCol + 1) + j] - tmpMean[j], 2.0);
-                }
-            }
-            for (int i = 1; i < numSelCol + 1; i++) {
-                tmpSD[i] = sqrt(tmpSD[i] / double(samSize * 1.0 - 1.0));
-            }
-        }
-
-        for (int i = 0; i < samSize; i++) {
-            for (int j = 1; j < numSelCol + 1; j++) {
-                covdata[i * (numSelCol + 1) + j] = (covdata[i * (numSelCol + 1) + j] - tmpMean[j]) / tmpSD[j];
-            }
-        }
-
-    }
-    else 
-    {
-        if (scale) {
-            cout << "Scaling ALL exposures and covariates..." << endl;
-            matmatprod(&tmp1[0], &covdata[0], tmpMean, 1, samSize, numSelCol + 1);
-            for (int i = 1; i < numSelCol + 1; i++) {
-                tmpMean[i] /= double(samSize * 1.0);
-            }
-            for (int i = 0; i < samSize; i++) {
-                for (int j = 1; j < numSelCol + 1; j++) {
-                    tmpSD[j] += pow(covdata[i * (numSelCol + 1) + j] - tmpMean[j], 2.0);
-                }
-            }
-            for (int i = 1; i < numSelCol + 1; i++) {
-                tmpSD[i] = sqrt(tmpSD[i] / double(samSize * 1.0 - 1.0));
-            }
-            for (int i = 0; i < samSize; i++) {
-                for (int j = 1; j < numSelCol + 1; j++) {
-                    covdata[i * (numSelCol + 1) + j] /= tmpSD[j];
-                }
-            }
-        }
-    }
-    delete[] tmpMean;
-    *covdata_ret = covdata;
-} 
-     
 
 void printCovVarMat(int numCovs, std::ext::V_string covNames, double* covVarMat, double* beta, int phenoType, int samSize, std::ostream* log_stream) 
 {
@@ -772,7 +689,7 @@ void NullModel::print_res(
             id_lookup[ph][id_include[ph][idx]] = idx;
         }
     }
-
+    
     // Main loop over all samples
     for (size_t row = 0; row < bgen_sample_id.size(); ++row) 
     {
