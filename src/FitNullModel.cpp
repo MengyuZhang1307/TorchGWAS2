@@ -477,7 +477,8 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
     matvecprod(XTransX, XTransY, beta, numSelCol + 1, numSelCol + 1);
 
     // logistic regression
-    while ((phenoType == 1) && (Check != (numSelCol + 1))) 
+    const int MAX_ITER = 500;
+    while ((phenoType == 1) && (Check != (numSelCol + 1)) && (iter < MAX_ITER))
     {
         iter++;
         // X * beta
@@ -487,11 +488,15 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         // W * X and W * Y
         double* WX = new double[samSize * (numSelCol + 1)];
         double* WYip1 = new double[samSize];
-        for (int i = 0; i < samSize; i++) {
+
+        for (int i = 0; i < samSize; i++) 
+        {
             miu[i] = exp(XbetaFL[i]) / (1.0 + exp(XbetaFL[i]));
             Yip1[i] = XbetaFL[i] + (phenoY[i] - miu[i]) / (miu[i] * (1 - miu[i]));
             WYip1[i] = miu[i] * (1 - miu[i]) * Yip1[i];
-            for (int j = 0; j < numSelCol + 1; j++) {
+
+            for (int j = 0; j < numSelCol + 1; j++) 
+            {
                 WX[i * (numSelCol + 1) + j] = miu[i] * (1 - miu[i]) * covX[i * (numSelCol + 1) + j];
             }
         }
@@ -505,7 +510,9 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         double* betaT = new double[(numSelCol + 1)];
         matvecprod(XTransX, XTransY, betaT, numSelCol + 1, numSelCol + 1);
         Check = 0;
-        for (int i = 0; i < numSelCol + 1; i++) {
+
+        for (int i = 0; i < numSelCol + 1; i++) 
+        {
             if (std::abs(betaT[i] - beta[i]) <= epsilon) Check++;
             beta[i] = betaT[i];
         }
@@ -516,7 +523,31 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
         delete[] XbetaFL;
         delete[] betaT;
     }
+    // model did not converge
+    if ((phenoType == 1) && (iter >= MAX_ITER) && (Check != (numSelCol + 1)))
+    {
+        spdlog::error("Error: logistic regression failed to converge after {} iterations.", MAX_ITER);
+        spdlog::error("{:>35}", "Estimate");
 
+        for (int i = 0; i < numSelCol + 1; ++i)
+        {
+            std::string name = (i == 0) ? "Intercept" : covSelHeadersName[i - 1];
+
+            // Print aligned table-style output
+            spdlog::error("{:<20}{:>15.6f}", name, beta[i]);
+        }
+        // free allocated memory
+        delete[] XTransX;
+        delete[] XTransY;
+        delete[] beta;
+
+        XTransX = nullptr;
+        XTransY = nullptr;
+        beta    = nullptr;
+
+        // exit program
+        exit(EXIT_FAILURE);
+    }
     // X * beta
     double* Xbeta = new double[samSize];
     Xbeta_ret.resize(samSize);

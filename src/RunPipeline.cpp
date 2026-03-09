@@ -104,14 +104,6 @@ CovariateReadResult GEMRunner::read_covariate_data()
     bool& cov_is_duplicated = result.cov_is_duplicated;
     cov_is_duplicated = false;
 
-    // int numExpSelCol = opt.exposures.size();
-    // int numIntSelCol = opt.interactions.size();
-    // for (int i = numIntSelCol - 1; i >= 0; --i)
-    //     opt.covariates.insert(opt.covariates.begin(), opt.interactions[i]);
-    // for (int i = numExpSelCol - 1; i >= 0; --i)
-    //     opt.covariates.insert(opt.covariates.begin(), opt.exposures[i]);
-    // result.numSelCol = opt.covariates.size() + numExpSelCol + numIntSelCol;
-    
     result.numSelCol = opt.covariates.size();
     std::ext::V_int colSelVec(opt.covariates.size());
 
@@ -147,10 +139,6 @@ CovariateReadResult GEMRunner::read_covariate_data()
             throw std::runtime_error("ERROR: Random slope column not found");
     }
 
-    // for (const auto& h : opt.exposures)
-    //     if (!colNames.count(h)) throw std::runtime_error("ERROR: Exposure column not found: " + h);
-    // for (const auto& h : opt.interactions)
-    //     if (!colNames.count(h)) throw std::runtime_error("ERROR: Interaction column not found: " + h);
     for (size_t i = 0; i < opt.covariates.size(); ++i) 
     {
         if (!colNames.count(opt.covariates[i]))
@@ -191,7 +179,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
             cov_is_duplicated = true;
         }
 
-        bool has_missing;
+        bool has_missing = false;
         std::ext::V_string entry;
         for (int c : colSelVec) 
         {
