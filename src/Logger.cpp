@@ -52,14 +52,8 @@ int CerrRedirector::sync()
 
 void LoggerSetup::init(const std::string& filename) 
 {
-    fs::path log_path(filename);                            // convert string → path
-    fs::path log_dir = log_path.parent_path();            
-    fs::path log_name = log_path.stem();           
-    log_path = log_dir / (log_name.string() + "_fit_model.log");    
-    
-    // auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     auto console_sink = std::make_shared<spdlog::sinks::stdout_sink_mt>();
-    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_path, true);
+    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(filename, true);
     std::vector<spdlog::sink_ptr> sinks{console_sink, file_sink};
 
     auto logger = std::make_shared<spdlog::logger>("multi_logger", sinks.begin(), sinks.end());
