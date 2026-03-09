@@ -22,12 +22,8 @@ Function to read intermediate file to match the smaple_ids order
 *************************************/
 std::ext::V_string read_ids_intermediatefile(std::string& id_path) 
 {
-    fs::path out_path(id_path);                          
-    fs::path out_dir = out_path.parent_path();           
-    // fs::path out_name = out_path.filename();  
-    fs::path out_name = out_path.stem();             
-    fs::path inter_path = out_dir / ("intermediate_" + out_name.string() + ".txt");    
-    std::ifstream in(inter_path);
+    std::ifstream in(id_path);
+
     if (!in) 
     {
         throw std::runtime_error("Cannot open the correction file. Make sure you are using the correct file from step1 "

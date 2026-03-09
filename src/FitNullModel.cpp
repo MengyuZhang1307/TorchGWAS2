@@ -646,15 +646,20 @@ void NullModel::print_res(
     std::ext::VV_string const& id_include,
     std::ext::VV_double const& output_matrix)
 {
-    fs::path out_path(output);                            // convert string → path
+    fs::path out_path(output);           // convert string → path
     fs::path out_dir = out_path.parent_path();            
-    // fs::path out_name = out_path.filename();   
-    fs::path out_name = out_path.stem();           
-    fs::path inter_path = out_dir / ("intermediate_" + out_name.string() + ".txt");    
-    std::ofstream out(inter_path);                        // open file for writing
-    if (!out.is_open()) {
-        throw std::runtime_error("Failed to open " + inter_path.string() + " for writing.");
+
+    // create directory if it does not exist
+    if (!out_dir.empty() && !fs::exists(out_dir)) {
+        fs::create_directories(out_dir);
     }
+
+    std::ofstream out(output);
+
+    if (!out.is_open()) {
+        throw std::runtime_error("Failed to open " + output + " for writing.");
+    }
+
     out << "sample_id" << '\t';
     // Header line: phenotype names
     for (size_t i = 2; i < pheno_column_names.size(); ++i) 

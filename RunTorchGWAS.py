@@ -90,17 +90,6 @@ def normalize_delim(s):
         return ","
     return s
 
-def open_crash_log(log_path, mode="w"):
-    try:
-        log_dir = os.path.dirname(log_path)
-
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
-        return open(log_path, mode, buffering=1)
-
-    except Exception as e:
-        print(f"Warning: cannot open log file {log_path}: {e}", file=sys.stderr)
-        return sys.stderr
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run TorchGWAS using GEM2 and Torch backend.")
@@ -111,7 +100,7 @@ def parse_args():
     parser.add_argument("--kin-file", type=str, default="", help="Kinship file path (optional, required for step1 and step2 if using kinship)")
     parser.add_argument("--kin-diag", type=float, default=1.0, help="Diagonal value of " \
                         "kinship matrix that not accounting for inbreeding (Default: 1.0)")
-    parser.add_argument("--corr", type=str, default="correction.txt", help="correction file path (required for step2)")
+    parser.add_argument("--corr-file", type=str, default="correction.txt", help="correction file path (required for step2)")
     parser.add_argument("--pheno-delim", type=str, default=",", help="Phenotype file delimiter (default: comma)")
     parser.add_argument("--cov-delim", type=str, default=",", help="Covariate file delimiter (default: comma)")
     parser.add_argument("--kin-delim", type=str, default=",", help="Kinship file delimiter (default: comma)")
@@ -142,6 +131,18 @@ def parse_args():
 
     parser.add_argument("--parquet", nargs="+", default=[], help="Input TGWAS parquet file(s) for step3.")
     return parser.parse_args() #built-in python method
+
+def open_crash_log(log_path, mode="a"):
+    try:
+        log_dir = os.path.dirname(log_path)
+
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        return open(log_path, mode, buffering=1)
+
+    except Exception as e:
+        print(f"Warning: cannot open log file {log_path}: {e}", file=sys.stderr)
+        return sys.stderr
 
 def build_logger(log_path):
     """Only handles logger + dir/base names based on --log-file."""
@@ -238,10 +239,10 @@ def build_conf_step1(args):
         kin_delim=normalize_delim(args.kin_delim),
         kin_diag=args.kin_diag,
         threads=args.threads,
-        corr_file=args.corr,
+        corr_file=args.corr_file,
         out_file=args.out,
         log_file=args.log,
-        log_null_file=args.log_null,
+        null_log_file=args.null_log,
         verbose=args.verbose,
     )
     return confopt
@@ -266,7 +267,7 @@ def build_conf_step2(args):
         kin_delim=normalize_delim(args.kin_delim),
         kin_diag=args.kin_diag,
         threads=args.threads,
-        corr_file=args.corr,
+        corr_file=args.corr_file,
         out_file=args.out,
         log_file=args.log,
         verbose=args.verbose,
@@ -284,8 +285,8 @@ def run_all(dir_name, base_name, args, log_file):
     sub_step1.bgen = args.bgen[0]
     sub_step1.sample = args.sample[0]
     conf_step1 = build_conf_step1(sub_step1)
-
-    corr_file = args.corr
+    runner = GEMRunner(conf_step1.get())     
+    corr_file = args.corr_file
     #Null model
     runner.run_fit_nullmodel()
     logging.info("correction file (correction) path: %s", corr_file)
@@ -368,7 +369,7 @@ def run_step1(confopt, dir_name, base_name, args):
       - correction file
       -run_gwas(runner, correction, TGWAS_file, ...)
     """
-    corr_file = args.corr
+    corr_file = args.corr_file
     # 1) C++ init
     runner = GEMRunner(confopt.get())
 
@@ -383,7 +384,7 @@ def run_step2(confopt, dir_name, base_i, base_name, args):
       - GEMRunner init
       - run_gwas(runner, correction, parquet file, ...)
     """
-    corr_file = args.corr
+    corr_file = args.corr_file
     TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
 
     # print("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
@@ -426,6 +427,7 @@ def main():
     global _TEE
     start_time = time.time()
     args = parse_args()
+    
     crash_fp = open_crash_log(args.log)
     faulthandler.enable(file=crash_fp, all_threads=True)
     crash_fp.write("\n==== log start ====\n")
@@ -469,6 +471,8 @@ def main():
                 print("WARNING: --pheno-file is not used in step2; ignoring it for --step step2.", file=sys.stderr)
             if getattr(args, "convert", False):
                 print("WARNING: --convert is only used with --step all. Ignoring it for --step step2.", file=sys.stderr)
+            if args.null_log != "null_log.log":
+                print("WARNING: --null-log is only used with --step step1. Ignoring it for --step step2.", file=sys.stderr)
             if len(args.bgen) != len(args.sample):
                 print(f"--bgen count ({len(args.bgen)}) must match --sample count ({len(args.sample)}).")
                 raise SystemExit(2)
@@ -513,11 +517,14 @@ def main():
         end_time = time.time()
         print("\nTorchGWAS pipeline step completed successfully.")
         print(f"Wall time: {(end_time - start_time):.2f} seconds")
+    except KeyboardInterrupt:
+        logging.warning("Pipeline interrupted by user (Ctrl+C).")
+        raise SystemExit(130)
+
     except SystemExit:
-        # keep SystemExit behavior (argparse / your raise SystemExit)
         raise
+
     except Exception:
-        # THIS will now go into the log because tee is still active
         logging.exception("Uncaught Python exception:")
         raise SystemExit(1)
     
