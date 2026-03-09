@@ -6,7 +6,7 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
 {
     if(!match_ids)
     {
-        LoggerSetup::init(opt.outfile);
+        LoggerSetup::init(opt.null_log_file); // Log fitting he null model, only for step 1
     }
     find_genofile_type();
     check_kinship_usage();
@@ -20,7 +20,7 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
         bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
                                     shared_cov_result.covMap, opt.missing_key, 
                                     shared_cov_result.numSelCol, 
-                                    shared_cov_result.samSize, opt.outfile, match_ids); 
+                                    shared_cov_result.samSize, opt.corr_file, match_ids); 
     }
     else
     {

@@ -262,16 +262,16 @@ def calc_t(corrected_res, geno, beta, gamma, sqrt_c2, ph_std):
         return geno_mean, geno_std, t_stats, beta_coeffs, se
 
 
-def run_gwas(runner, intermediate_file, TGWAS_file, snps_per_chunk=1000, device='cuda'):
+def run_gwas(runner, corr_file, TGWAS_file, snps_per_chunk=1000, device='cuda'):
     """
     Run GWAS using a pre-configured GEMRunner instance.
     """
     # dir_name = os.path.dirname(out_file)
     # base_name = os.path.basename(out_file)
-    # intermediate_file = os.path.join(dir_name, "intermediate_" + base_name)
+    # corr_file = os.path.join(dir_name, "intermediate_" + base_name)
     overall_start = time.time()
 
-    ph_headers, c2_values, corrected_res, resid_sample_ids = read_correction_file(intermediate_file) # read corrected_res, c2, ph_headers and sample ids from intermediate file
+    ph_headers, c2_values, corrected_res, resid_sample_ids = read_correction_file(corr_file) # read corrected_res, c2, ph_headers and sample ids from intermediate file
 
     if device == 'cuda' and torch.cuda.is_available():
         device = torch.device('cuda')

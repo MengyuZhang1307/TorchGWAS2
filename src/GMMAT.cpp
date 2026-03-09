@@ -1453,6 +1453,14 @@ Glmmkin GMMAT::glmmkin_fit_cs(Fit& fit_null, bool verbose,
                             std::ostream* log_stream)
 {
     std::ostream& out = (log_stream ? *log_stream : std::cout);
+    if(verbose)
+    {
+        out << "****************************************************************************\n";
+        out << "Calculating the correction factor for cross-sectional data without kinship." << "\n";
+        out << "****************************************************************************\n";
+        out << "The dispersion value is: " << fit_null.sigma2 << "\n";
+    }
+    
     Glmmkin glmmkin;
     int y_size = m_y.size();
 
@@ -1523,12 +1531,12 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
                             double tol, double tau_min, 
                             double tau_max, int tau_region)
 {
-    std::ostream& log_out = (log_stream ? *log_stream : std::cout);
+    std::ostream& out = (log_stream ? *log_stream : std::cout);
     if(verbose)
     {
-        log_out << "****************************************************************************\n";
-        log_out << "Start fitting the model for phenotype: " << ph_column_name << "\n";
-        log_out << "****************************************************************************\n";
+        out << "****************************************************************************\n";
+        out << "Start fitting the model for phenotype: " << ph_column_name << "\n";
+        out << "****************************************************************************\n";
     }
 
     Glmmkin glmmkin;
@@ -1602,14 +1610,8 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     
     fit0(y_size, m_n_sel_col, pheno_type, tol, m_robust, cov_selected_hdrs, new_y, cov_data,
         &gf.XinvXTX, &gf.mu, &gf.resid, &gf.sigma2, gf.alpha, gf.eta, gf.cov, verbose, log_stream); 
-    log_out << std::flush;
-        
-    if(verbose)
-    {
-        log_out << "****************************************************************************\n";
-        log_out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
-    }
-        
+    out << std::flush;
+                
     new_y.clear();
     Fit fit_null; 
     fit_null = gf.convert_2_fit(); 
@@ -1617,7 +1619,7 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     bool is_dup = m_vkins_sp[0].cov.m_data_frame.any_duplicated(m_vkins_sp[0].cov.m_sam_id_hdr);
     if(is_dup)
     {
-        log_out << "Duplicated id detected...\nAssuming longitudinal data with repeated measures...\n";
+        out << "Duplicated id detected...\nAssuming longitudinal data with repeated measures...\n";
         if(!m_vkins_sp[0].kin.m_null_kin) // if there is a kinship file add another matrix
         {
             SparseInverse spi;
@@ -1684,6 +1686,11 @@ glmmkin_residuals GMMAT::glmmkin_init(Cov cov_copy, const std::string kin_add,
     }
     else 
     {
+        if(verbose)
+        {
+            out << "****************************************************************************\n";
+            out << "Start fitting the null model for phenotype: " << ph_column_name << "...\n\n";
+        }
         std::ext::V_int group_id;
         if(groups.size() == 0)
         {

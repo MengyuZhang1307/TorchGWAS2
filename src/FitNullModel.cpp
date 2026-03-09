@@ -42,7 +42,7 @@
 
 namespace 
 {
-std::mutex g_glmm_log_mutex;
+    std::mutex g_glmm_log_mutex; //guard for gmmat log
 }
 
 NullModel::NullModel(GEMOptions const& user_opt): opt(user_opt){}
@@ -54,8 +54,7 @@ void NullModel::process_phenotype_file(Cov& cov)
 
     if (!file.is_open()) 
     {
-        std::cerr << "Error opening file: " << opt.pheno_add << std::endl;
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Error opening file: " + opt.pheno_add);
     }
     
     // Read header (column names)
@@ -78,8 +77,7 @@ void NullModel::process_phenotype_file(Cov& cov)
         }
         else
         {
-            std::cerr << "ERROR: there are repeated columns'name in the phenotype file please check your file.\n";
-            exit(EXIT_FAILURE); 
+            throw std::runtime_error("ERROR: there are repeated columns'name in the phenotype file please check your file.");
         }
         ++col_indx;
     }
@@ -91,8 +89,8 @@ void NullModel::process_phenotype_file(Cov& cov)
     // The first two cols are FID and IID
     if(num_columns < 3)
     {
-        std::cerr << "Warning: number of columns in phenotype file at least should be 3. check row: " << row_indx << "\n";
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("ERROR: number of columns in phenotype file must be at least 3. Check row: " 
+            + std::to_string(row_indx));
     }
     
     pheno_raw.clear();
@@ -119,16 +117,14 @@ void NullModel::process_phenotype_file(Cov& cov)
 
         if (row_indx >= cov.m_data_frame.m_data[cov.m_sam_id_hdr].size())
         {
-            std::cerr << "ERROR: Sample IDs in pheno file are more than covariate file " << '\n';
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("ERROR: Sample IDs in phenotype file are more than covariate file");
         }
 
         if (values[hdr_id_indx] != cov.m_data_frame.m_data[cov.m_sam_id_hdr][row_indx]) 
         {
-            std::cerr << "ERROR: Sample ID mismatch at line " << row_indx + 1
-                    << ". Expected: " << cov.m_data_frame.m_data[cov.m_sam_id_hdr][row_indx]
-                    << ", Found: " << values[hdr_id_indx] << '\n';
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("ERROR: Sample ID mismatch at line " + std::to_string(row_indx + 1)
+                + ". Expected: " + cov.m_data_frame.m_data[cov.m_sam_id_hdr][row_indx]
+                + ", Found: " + values[hdr_id_indx]);
         }
         
         pheno_raw.push_back(std::move(values));
@@ -137,8 +133,7 @@ void NullModel::process_phenotype_file(Cov& cov)
     
     if (row_indx < cov.m_data_frame.m_data[cov.m_sam_id_hdr].size())
         {
-            std::cerr << "ERROR: Sample IDs in covariate file are more than pheno file " << '\n';
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("ERROR: Sample IDs(rows) in covariate file are more than phenotype file");
         }
 }
 
@@ -169,9 +164,8 @@ void NullModel::filter_pheno_by_cov(Cov const& cov)
     {
         if (row_idx < 0 || row_idx >= static_cast<int>(pheno_raw.size()))
         {
-            std::cerr << "ERROR: keep_rows index out of range for phenotype data: " 
-                      << row_idx << "\n";
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("ERROR: rows index out of range for phenotype data: "
+                + std::to_string(row_idx));
         }
 
         const auto& row = pheno_raw[row_idx];  // same ordering as original cov
@@ -396,8 +390,8 @@ void NullModel::fit_nullmodel(bool kin_flag,
     {
         if(std::find(cov_headers.begin(), cov_headers.end(), opt.random_slope_header_name) == cov_headers.end())
         {
-            std::cerr << "Warning: The random slope variable '" << opt.random_slope_header_name << "' was not found among the covariates.\n";
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("Warning: The random slope variable '" + opt.random_slope_header_name
+                + "' was not found among the covariates.");
         }
     }           
     
@@ -406,14 +400,13 @@ void NullModel::fit_nullmodel(bool kin_flag,
                     cov_headers, bgen_sample_id, opt.missing_key,
                     opt.threads, fitNullModel2, 
                     opt.covariates, opt.random_slope_header_name, 
-                    opt.outfile);
+                    opt.corr_file);
     cout << "\nEnd of fitting null model\n";
     cout << "****************************************************************************\n";
     cout << "calculating the duration of fitting null model...\n";
     auto end_time_gmmat = std::chrono::high_resolution_clock::now();
     printExecutionTime(start_time_gmmat, end_time_gmmat);
     cout << std::flush;
-
 }
  
 
@@ -660,8 +653,7 @@ void NullModel::print_res(
     fs::path inter_path = out_dir / ("intermediate_" + out_name.string() + ".txt");    
     std::ofstream out(inter_path);                        // open file for writing
     if (!out.is_open()) {
-        std::cerr << " Failed to open " << inter_path << " for writing.\n";
-        std::exit(EXIT_FAILURE);
+        throw std::runtime_error("Failed to open " + inter_path.string() + " for writing.");
     }
     out << "sample_id" << '\t';
     // Header line: phenotype names

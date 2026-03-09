@@ -27,7 +27,10 @@ struct GEMOptions
     double kin_diag = 1;
     int threads;
     int num_chunks = 0;
-    std::string outfile = "output";
+    std::string corr_file = "correction.txt";
+    std::string out_file = "output.txt";
+    std::string log_file = "log.log";
+    std::string null_log_file = "null_log.log";
     bool verbose = false;
     GEMOptions(); 
 };

@@ -90,6 +90,18 @@ def normalize_delim(s):
         return ","
     return s
 
+def open_crash_log(log_path, mode="w"):
+    try:
+        log_dir = os.path.dirname(log_path)
+
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        return open(log_path, mode, buffering=1)
+
+    except Exception as e:
+        print(f"Warning: cannot open log file {log_path}: {e}", file=sys.stderr)
+        return sys.stderr
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run TorchGWAS using GEM2 and Torch backend.")
     parser.add_argument("--pheno-file", type=str, help="Phenotype file path (required for step1)")
@@ -99,7 +111,7 @@ def parse_args():
     parser.add_argument("--kin-file", type=str, default="", help="Kinship file path (optional, required for step1 and step2 if using kinship)")
     parser.add_argument("--kin-diag", type=float, default=1.0, help="Diagonal value of " \
                         "kinship matrix that not accounting for inbreeding (Default: 1.0)")
-    parser.add_argument("--intermediate-file", type=str, default="", help="intermediate file path (required for step2)")
+    parser.add_argument("--corr", type=str, default="correction.txt", help="correction file path (required for step2)")
     parser.add_argument("--pheno-delim", type=str, default=",", help="Phenotype file delimiter (default: comma)")
     parser.add_argument("--cov-delim", type=str, default=",", help="Covariate file delimiter (default: comma)")
     parser.add_argument("--kin-delim", type=str, default=",", help="Kinship file delimiter (default: comma)")
@@ -114,6 +126,8 @@ def parse_args():
     parser.add_argument("--threads", type=int, help="Number of threads")
     parser.add_argument("--stream-snps", type=int, default=1000, help="Number of SNPs per chunk")
     parser.add_argument("--out", type=str, default="out.txt", help="Output file name")
+    parser.add_argument("--log", type=str, default="log.log", help="log file path")
+    parser.add_argument("--null-log", type=str, default="null_log.log", help="Crash log file")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Computation device (default: cuda)")
     parser.add_argument("--verbose", action="store_true", help="Print null model(default: False)")
     parser.add_argument("--convert", action="store_true", help="Convert binary to text file (default: True)")
@@ -121,7 +135,7 @@ def parse_args():
                 help=(
                     "Pipeline step to run:\n"
                     "all = perform all steps togethet\n"
-                    "step1 = Fit the null model generate correction factors (write intermediate_*.txt)\n"
+                    "step1 = Fit the null model generate correction factors (write to correction file)\n"
                     "step2 = TGWAS (write TGWAS_*.parquet)\n"
                     "step3 = Convert TGWAS_*.parquet to .txt\n"
                 ))
@@ -129,12 +143,29 @@ def parse_args():
     parser.add_argument("--parquet", nargs="+", default=[], help="Input TGWAS parquet file(s) for step3.")
     return parser.parse_args() #built-in python method
 
-def build_logger_and_paths(args):
-    """Only handles logger + dir/base names based on --out."""
-    dir_name = os.path.dirname(args.out) or "."
-    base_name = os.path.splitext(os.path.basename(args.out))[0]
-    log_file = os.path.join(dir_name, base_name + ".log")
-    return  dir_name, base_name
+def build_logger(log_path):
+    """Only handles logger + dir/base names based on --log-file."""
+    
+    dir_name = os.path.dirname(log_path) or "."
+    base_name = os.path.splitext(os.path.basename(log_path))[0]
+
+    # create directory if it does not exist
+    os.makedirs(dir_name, exist_ok=True)
+
+    log_file = log_path
+
+    return log_file
+
+
+def build_output_paths(out_path):
+    """Only handles logger + dir/base names based on --log-file."""
+    
+    dir_name = os.path.dirname(out_path) or "."
+    base_name = os.path.splitext(os.path.basename(out_path))[0]
+
+    # create directory if it does not exist
+    os.makedirs(dir_name, exist_ok=True)
+    return dir_name, base_name
 
 def validate_args(args):
     """
@@ -145,6 +176,19 @@ def validate_args(args):
             logging.error("--kin-delim or --kin-diag cannot be used without --kin-file.")
             raise SystemExit(2)
 
+# def open_intermediate_file(int_path, mode="w"):
+#     try:
+#         dir_name = os.path.dirname(int_path)
+
+#         # create directory if needed
+#         if dir_name:
+#             os.makedirs(dir_name, exist_ok=True)
+
+#         return open(int_path, mode)
+
+#     except Exception as e:
+#         print(f"Warning: cannot open intermediate file {int_path}: {e}", file=sys.stderr)
+#         return None
 
 def build_conf_allsteps(args):
     """Config for all"""
@@ -167,7 +211,8 @@ def build_conf_allsteps(args):
         kin_delim=normalize_delim(args.kin_delim),
         kin_diag=args.kin_diag,
         threads=args.threads,
-        outfile=args.out,
+        out_file=args.out,
+        log_file=args.log,
         verbose=args.verbose,
     )
     return confopt
@@ -193,7 +238,10 @@ def build_conf_step1(args):
         kin_delim=normalize_delim(args.kin_delim),
         kin_diag=args.kin_diag,
         threads=args.threads,
-        outfile=args.out,
+        corr_file=args.corr,
+        out_file=args.out,
+        log_file=args.log,
+        log_null_file=args.log_null,
         verbose=args.verbose,
     )
     return confopt
@@ -218,7 +266,9 @@ def build_conf_step2(args):
         kin_delim=normalize_delim(args.kin_delim),
         kin_diag=args.kin_diag,
         threads=args.threads,
-        outfile=args.out,
+        corr_file=args.corr,
+        out_file=args.out,
+        log_file=args.log,
         verbose=args.verbose,
     )
     return confopt
@@ -235,11 +285,10 @@ def run_all(dir_name, base_name, args, log_file):
     sub_step1.sample = args.sample[0]
     conf_step1 = build_conf_step1(sub_step1)
 
-    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
-    runner = GEMRunner(conf_step1.get())        
+    corr_file = args.corr
     #Null model
     runner.run_fit_nullmodel()
-    logging.info("Intermediate file (correction) path: %s", intermediate_file)
+    logging.info("correction file (correction) path: %s", corr_file)
     setup_pipeline_log(log_file, mode="a")
     # ------------------
     # STEP 2 (loop)
@@ -272,7 +321,7 @@ def run_all(dir_name, base_name, args, log_file):
         runner = GEMRunner(conf_step2.get(), True) 
         run_gwas(
             runner,
-            intermediate_file,               # correction file
+            corr_file,               # correction file
             TGWAS_file,
             snps_per_chunk=args.stream_snps,
             device=args.device,
@@ -316,18 +365,17 @@ def run_step1(confopt, dir_name, base_name, args):
     STEP 1:
       - GEMRunner init
       - run_fit_nullmodel
-      - log intermediate + TGWAS filenames
+      - correction file
       -run_gwas(runner, correction, TGWAS_file, ...)
     """
-    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
+    corr_file = args.corr
     # 1) C++ init
     runner = GEMRunner(confopt.get())
 
     # 2) Null model
     runner.run_fit_nullmodel()
 
-    # print(f"Intermediate file (correction) path: {intermediate_file}")    
-    logging.info("Intermediate file (correction) path: %s", intermediate_file)
+    logging.info("correction file (correction) path: %s", corr_file)
 
 def run_step2(confopt, dir_name, base_i, base_name, args):
     """
@@ -335,19 +383,19 @@ def run_step2(confopt, dir_name, base_i, base_name, args):
       - GEMRunner init
       - run_gwas(runner, correction, parquet file, ...)
     """
-    intermediate_file = os.path.join(dir_name, "intermediate_" + base_name + ".txt")
+    corr_file = args.corr
     TGWAS_file = os.path.join(dir_name, base_i + ".parquet")
 
     # print("STEP 2: Re-initializing GEMRunner and running GWAS/TGWAS...")
     print(f"TGWAS parquet output: {TGWAS_file}")
 
-    runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with intermediate file
+    runner = GEMRunner(confopt.get(), True) # True to match IDs for each genotype with correction file
 
     print("Starting GWAS/TGWAS with run_gwas...")
 
     run_gwas(
         runner,
-        intermediate_file,               # correction file
+        corr_file,               # correction file
         TGWAS_file,
         snps_per_chunk=args.stream_snps,
         device=args.device,
@@ -378,25 +426,26 @@ def main():
     global _TEE
     start_time = time.time()
     args = parse_args()
-    crash_fp = open(args.out + ".crash.log", "w", buffering=1)
+    crash_fp = open_crash_log(args.log)
     faulthandler.enable(file=crash_fp, all_threads=True)
-    crash_fp.write("\n==== crash log start ====\n")
+    crash_fp.write("\n==== log start ====\n")
     crash_fp.flush()
     
     try:
-        dir_name, base_name = build_logger_and_paths(args)
-        log_file = os.path.join(dir_name, base_name + ".log")
+        log_file = build_logger(args.log)
+        dir_name, base_name = build_output_paths(args.out)
         if args.step == "all":
-            setup_step1_log(log_file, mode="w")
+            setup_step1_log(log_file, mode="a")
             validate_args(args)
             run_all(dir_name, base_name, args, log_file)
 
         # Step-specific requirements
         if args.step == "step1":
-            setup_step1_log(log_file, mode="w")
+            setup_step1_log(log_file, mode="a")
             validate_args(args)
             logging.info("%s", "*" * 80)
             logging.info("STEP 1: fitting null model...")
+
             if getattr(args, "convert", False):
                 logging.warning("--convert is only used with --step all. Ignoring it for --step step1.")
             if not args.pheno_file:

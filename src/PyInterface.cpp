@@ -55,7 +55,10 @@ PYBIND11_MODULE(Mygen, m)
         .def_readwrite("kin_delim", &GEMOptions::kin_delim)
         .def_readwrite("kin_diag", &GEMOptions::kin_diag)
         .def_readwrite("threads", &GEMOptions::threads)
-        .def_readwrite("outfile", &GEMOptions::outfile)
+        .def_readwrite("corr_file", &GEMOptions::corr_file)
+        .def_readwrite("out_file", &GEMOptions::out_file)
+        .def_readwrite("log_file", &GEMOptions::log_file)
+        .def_readwrite("null_log_file", &GEMOptions::null_log_file)
         .def_readwrite("verbose", &GEMOptions::verbose);
         
         // Bind GEMRunner
