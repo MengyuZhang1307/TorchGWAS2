@@ -462,7 +462,7 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
     {
         out << "Precalculations and fitting null model..." << endl;
     }
-    //auto start_time = std::chrono::high_resolution_clock::now();
+
     // transpose(X) * X
     double* XTransX = new double[(numSelCol + 1) * (numSelCol + 1)];
     matTmatprod(covX, covX, XTransX, samSize, numSelCol + 1, numSelCol + 1);
@@ -526,15 +526,18 @@ void fitNullModel2(int samSize, int numSelCol, int phenoType, double epsilon,
     // model did not converge
     if ((phenoType == 1) && (iter >= MAX_ITER) && (Check != (numSelCol + 1)))
     {
-        spdlog::error("Error: logistic regression failed to converge after {} iterations.", MAX_ITER);
-        spdlog::error("{:>35}", "Estimate");
+        out << "Error: logistic regression failed to converge after "
+            << MAX_ITER << " iterations.\n";
+
+        out << std::setw(35) << "Estimate" << std::endl;
 
         for (int i = 0; i < numSelCol + 1; ++i)
         {
-            std::string name = (i == 0) ? "Intercept" : covSelHeadersName[i - 1];
+            std::string name = (i == 0) ? "Intercept" : covariates[i - 1];
 
-            // Print aligned table-style output
-            spdlog::error("{:<20}{:>15.6f}", name, beta[i]);
+            out << std::left  << std::setw(20) << name
+                << std::right << std::setw(15) << std::fixed << std::setprecision(6) << beta[i]
+                << std::endl;
         }
         // free allocated memory
         delete[] XTransX;
