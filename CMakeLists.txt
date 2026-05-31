@@ -225,7 +225,7 @@ project(GEM)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include(FetchContent)
 
-set(FETCHCONTENT_BASE_DIR /data/ssalehinasab/cmake_deps)
+set(FETCHCONTENT_BASE_DIR /data484_5/xzhao14/cmake_deps)
 
 file(GLOB SRC "src/*.cpp")
 file(GLOB CC_SOURCES "thirdparty/plink-2.0/*.cc")
@@ -392,19 +392,9 @@ message(STATUS "Using MPFR include dir: ${MPFR_INCLUDE_DIR}")
 message(STATUS "Using MPFR library: ${MPFR_LIBRARIES}")
 
 #SuiteSparse=================================================================
-# --- SuiteSparse (link exported targets; no install needed) -------------------
-
-FetchContent_Declare(
-  suitesparse
-  GIT_REPOSITORY https://github.com/DrTimothyAldenDavis/SuiteSparse.git
-  GIT_TAG v7.8.2
-)
-set(OPENMP OFF CACHE BOOL "Disable OpenMP in SuiteSparse")
-# Try extra toggles (harmless if they don't exist)
-set(SUITESPARSE_USE_OPENMP OFF CACHE BOOL "")
-set(CHOLMOD_USE_OPENMP OFF CACHE BOOL "")
-set(ENABLE_OPENMP OFF CACHE BOOL "")
-FetchContent_MakeAvailable(suitesparse)
+# Use pre-built SuiteSparse libraries from shared cache
+set(suitesparse_SOURCE_DIR /data/ssalehinasab/cmake_deps/suitesparse-src)
+set(suitesparse_BINARY_DIR /data/ssalehinasab/cmake_deps/suitesparse-build)
 
 add_library(SuiteSparseBundle INTERFACE)
 
@@ -418,17 +408,6 @@ target_link_libraries(SuiteSparseBundle INTERFACE
     ${suitesparse_BINARY_DIR}/COLAMD/libcolamd.a
     ${suitesparse_BINARY_DIR}/AMD/libamd.a
     ${suitesparse_BINARY_DIR}/SuiteSparse_config/libsuitesparseconfig.a
-)
-add_dependencies(SuiteSparseBundle
-    cholmod
-    cxsparse
-    spqr
-    umfpack
-    camd
-    ccolamd
-    colamd
-    amd
-    suitesparseconfig
 )
 
 # #nlohmann/json=================================================================
@@ -452,6 +431,8 @@ target_include_directories(Mygen PRIVATE
     ${suitesparse_SOURCE_DIR}/COLAMD/Include
     ${suitesparse_SOURCE_DIR}/AMD/Include
     ${suitesparse_SOURCE_DIR}/SuiteSparse_config
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/plink-2.0
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/plink-2.0/include
 )
 target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")

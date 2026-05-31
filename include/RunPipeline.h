@@ -1,6 +1,7 @@
 #pragma once
 #include "ReadBGEN.h"
-#include "FitNullModel.h" 
+#include "ReadPLINK.h"
+#include "FitNullModel.h"
 #include "GEMConfig.h" 
 
 struct CovariateReadResult
@@ -28,6 +29,8 @@ private:
     // Options passed by user
     GEMOptions opt;
     Bgen bgen;
+    std::shared_ptr<Plink> plink_sptr = std::make_shared<Plink>();
+    Plink& plink = *plink_sptr;
     std::ext::V_string bgen_sample_id;
     // Covariates and phenotype data
     CovariateReadResult shared_cov_result;

@@ -2,7 +2,7 @@
 #include "Logger.h"
 
 
-GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt) 
+GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
 {
     if(!match_ids)
     {
@@ -13,39 +13,75 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
     // Step 1:  Read covariate file
     shared_cov_result = read_covariate_data();
 
-    // Step 2 run BGEN metods
-    bgen.process_bgen_header_block(opt.geno_add);
-    if(match_ids)
+    // Step 2: Process genotype file based on format type
+    if (genofile_type == "BGEN")
     {
-        bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
-                                    shared_cov_result.covMap, opt.missing_key, 
-                                    shared_cov_result.numSelCol, 
-                                    shared_cov_result.samSize, opt.corr_file, match_ids); 
-    }
-    else
-    {
-        bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file, 
-                                        shared_cov_result.covMap, opt.missing_key, 
-                                        shared_cov_result.numSelCol, 
-                                        shared_cov_result.samSize);   
-    }
-    
-    std::ext::V_string new_cov_hdrs;
-    for (int i=0; i< opt.covariates.size(); i++)
-    {
-        if (std::find(bgen.excludeCol.begin(), bgen.excludeCol.end(), (i+1)) == bgen.excludeCol.end()) // i+1 as first col is intercept
+        // Process BGEN format
+        bgen.process_bgen_header_block(opt.geno_add);
+        if(match_ids)
         {
-            
-            new_cov_hdrs.push_back(opt.covariates[i]);
-            
+            bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                        shared_cov_result.covMap, opt.missing_key,
+                                        shared_cov_result.numSelCol,
+                                        shared_cov_result.samSize, opt.corr_file, match_ids);
         }
-                    
+        else
+        {
+            bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                            shared_cov_result.covMap, opt.missing_key,
+                                            shared_cov_result.numSelCol,
+                                            shared_cov_result.samSize);
+        }
+
+        std::ext::V_string new_cov_hdrs;
+        for (int i=0; i< opt.covariates.size(); i++)
+        {
+            if (std::find(bgen.excludeCol.begin(), bgen.excludeCol.end(), (i+1)) == bgen.excludeCol.end()) // i+1 as first col is intercept
+            {
+                new_cov_hdrs.push_back(opt.covariates[i]);
+            }
+        }
+
+        opt.covariates = new_cov_hdrs;
+        new_cov_hdrs.resize(0);
+        bgen_sample_id = bgen.sampleID;
+        bgen.filterVariants = opt.do_filters;
+    }
+    else if (genofile_type == "BED" || genofile_type == "PGEN")
+    {
+        // Process PLINK format (BED or PGEN)
+        plink.process_plink_header_block(opt.geno_add);
+        if(match_ids)
+        {
+            plink.process_plink_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                        shared_cov_result.covMap, opt.missing_key,
+                                        shared_cov_result.numSelCol,
+                                        shared_cov_result.samSize, opt.corr_file, match_ids);
+        }
+        else
+        {
+            plink.process_plink_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                            shared_cov_result.covMap, opt.missing_key,
+                                            shared_cov_result.numSelCol,
+                                            shared_cov_result.samSize);
+        }
+
+        std::ext::V_string new_cov_hdrs;
+        for (int i=0; i< opt.covariates.size(); i++)
+        {
+            if (std::find(plink.excludeCol.begin(), plink.excludeCol.end(), (i+1)) == plink.excludeCol.end()) // i+1 as first col is intercept
+            {
+                new_cov_hdrs.push_back(opt.covariates[i]);
+            }
+        }
+
+        opt.covariates = new_cov_hdrs;
+        new_cov_hdrs.resize(0);
+        bgen_sample_id = plink.sampleID;
+        plink.filterVariants = opt.do_filters;
+        plink.includeVariantFile = opt.includeVariantFile;
     }
 
-    opt.covariates = new_cov_hdrs;
-    new_cov_hdrs.resize(0);
-    bgen_sample_id = bgen.sampleID;
-    bgen.filterVariants = opt.do_filters;
     is_dup_id = shared_cov_result.cov_is_duplicated;
     // free heavy members
     shared_cov_result.sampleID_list.clear();

@@ -82,13 +82,27 @@ PYBIND11_MODULE(Mygen, m)
             .def("start_dosage_stream",
                 [](GEMRunner& self, std::size_t queue_capacity, int snps_per_chunk){
                     auto q = std::make_shared<BoundedChunkQueue>(queue_capacity);
-                    // Copy required state so the thread doesn't depend on GEMRunner lifetime.
-                    auto bgen_copy = self.bgen; // shallow copy; calc_dosage opens its own FILE handles
                     auto geno_file = self.opt.geno_add;
                     auto threads = self.opt.threads;
-                    std::thread([q, bgen_copy, geno_file, threads, snps_per_chunk]() mutable {
-                        calc_dosage(geno_file, bgen_copy, *q, threads, snps_per_chunk);
-                    }).detach();
+                    auto genofile_type = self.genofile_type;
+
+                    // Branch based on genotype file format
+                    if (genofile_type == "BGEN") {
+                        // BGEN format - use existing calc_dosage
+                        auto bgen_copy = self.bgen; // shallow copy; calc_dosage opens its own FILE handles
+                        std::thread([q, bgen_copy, geno_file, threads, snps_per_chunk]() mutable {
+                            calc_dosage(geno_file, bgen_copy, *q, threads, snps_per_chunk);
+                        }).detach();
+                    } else if (genofile_type == "BED" || genofile_type == "PGEN") {
+                        // PLINK format - use calc_dosage_plink
+                        auto plink_sptr = self.plink_sptr;
+                        std::thread([q, plink_sptr, geno_file, threads, snps_per_chunk]() mutable {
+                            calc_dosage_plink(geno_file, *plink_sptr, *q, threads, snps_per_chunk);
+                        }).detach();
+                    } else {
+                        throw std::runtime_error("Unsupported genotype file format: " + genofile_type);
+                    }
+
                     return DosageStream(q);
                 },
                 py::arg("queue_capacity"), py::arg("snps_per_chunk") = 1
@@ -97,12 +111,27 @@ PYBIND11_MODULE(Mygen, m)
                 [](GEMRunner& self, std::size_t queue_capacity){
                     int snps_per_chunk = self.opt.stream_snps > 0 ? self.opt.stream_snps : 1000;
                     auto q = std::make_shared<BoundedChunkQueue>(queue_capacity);
-                    auto bgen_copy = self.bgen;
                     auto geno_file = self.opt.geno_add;
                     auto threads = self.opt.threads;
-                    std::thread([q, bgen_copy, geno_file, threads, snps_per_chunk]() mutable {
-                        calc_dosage(geno_file, bgen_copy, *q, threads, snps_per_chunk);
-                    }).detach();
+                    auto genofile_type = self.genofile_type;
+
+                    // Branch based on genotype file format
+                    if (genofile_type == "BGEN") {
+                        // BGEN format - use existing calc_dosage
+                        auto bgen_copy = self.bgen;
+                        std::thread([q, bgen_copy, geno_file, threads, snps_per_chunk]() mutable {
+                            calc_dosage(geno_file, bgen_copy, *q, threads, snps_per_chunk);
+                        }).detach();
+                    } else if (genofile_type == "BED" || genofile_type == "PGEN") {
+                        // PLINK format - use calc_dosage_plink
+                        auto plink_sptr = self.plink_sptr;
+                        std::thread([q, plink_sptr, geno_file, threads, snps_per_chunk]() mutable {
+                            calc_dosage_plink(geno_file, *plink_sptr, *q, threads, snps_per_chunk);
+                        }).detach();
+                    } else {
+                        throw std::runtime_error("Unsupported genotype file format: " + genofile_type);
+                    }
+
                     return DosageStream(q);
                 },
                 py::arg("queue_capacity")
