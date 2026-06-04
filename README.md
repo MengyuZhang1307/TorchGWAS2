@@ -6,8 +6,8 @@ A GPU-accelerated GWAS analysis tool with efficient null model fitting and PyTor
 
 - **Null Model Fitting**: CPU-based mixed model fitting with Intel MKL optimization
 - **TorchGWAS**: GPU/CPU-accelerated GWAS analysis using PyTorch
-- **BGEN format support**: Efficient genotype data streaming with PLINK 2.0 backend
-- **PLINK BED/PGEN format support**: Multi-threaded genotype reading for PLINK 1.x (BED/BIM/FAM) and PLINK 2.0 (PGEN/PVAR/PSAM) files; companion files are auto-detected from the base file path
+- **BGEN format support**: Efficient genotype data streaming
+- **PLINK BED format support**: Multi-threaded genotype reading for PLINK 1.x (BED/BIM/FAM) files; companion files are auto-detected from the base file path
 - **Docker support**: Containerized environment with CUDA 12.6
 
 ## Requirements
@@ -133,11 +133,10 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 ### Required Arguments:
 - `--pheno-file`: Path to phenotype file (must have FID, IID, and phenotype columns)
 - `--cov-file`: Path to covariate file (must have FID, IID, and covariate columns)
-- `--bgen`: Path to the genotype file. Accepts three formats (detected automatically by file extension):
+- `--bgen`: Path to the genotype file. Accepts two formats (detected automatically by file extension):
   - **BGEN** (`.bgen`): BGEN format — requires a companion `--sample` file
   - **BED** (`.bed`): PLINK 1.x format — companion `.bim` and `.fam` files must exist in the same directory with the same base name
-  - **PGEN** (`.pgen`): PLINK 2.0 format — companion `.pvar` and `.psam` files must exist in the same directory with the same base name
-- `--sample`: Path to BGEN sample file (required for BGEN format only; not used for BED/PGEN)
+- `--sample`: Path to BGEN sample file (required for BGEN format only; not used for BED)
 - `--sampleid-name`: Sample ID column header name (the **second column** in phenotype and covariate files, after FID). Examples: `IID`, `id`, `sampleid`
 - `--covar-names`: Space-separated list of covariate column names to include in the model (e.g., `PC1 PC2 PC3`)
 
@@ -157,7 +156,7 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 
 #### Variant Filtering
 - `--include-snp-file`: Path to file containing subset of variants to analyze (default: all variants)
-  - First line must be header: `snpid` (for BGEN, BED, or PGEN) or `rsid` (for BGEN only)
+  - First line must be header: `snpid` (for BGEN or BED) or `rsid` (for BGEN only)
   - One variant identifier per line after header
 
 #### Model Specification
@@ -180,7 +179,7 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 
 ### Genotype File Formats
 
-TorchGWAS supports three genotype file formats, selected automatically based on the file extension passed to `--bgen`.
+TorchGWAS supports two genotype file formats, selected automatically based on the file extension passed to `--bgen`.
 
 #### BGEN Format (`.bgen`)
 Standard BGEN file with a separate `.sample` file. Pass `--bgen data.bgen --sample data.sample`.
@@ -207,18 +206,7 @@ Genotype encoding for dosage calculation (counting A1/alt allele copies):
 
 Multi-threaded reading: each thread opens its own independent file handle and reads a disjoint block of variants via `fseek`/`fread`. The number of threads is controlled by `--threads`.
 
-#### PLINK 2.0 PGEN Format (`.pgen`)
-PLINK 2.0 binary format consisting of three files that must share the same base name and reside in the same directory:
-
-| File | Description |
-|------|-------------|
-| `.pgen` | Binary genotype data (passed to `--bgen`) |
-| `.pvar` | Variant information (VCF-like header: CHROM, POS, ID, REF, ALT) — auto-detected |
-| `.psam` | Sample information (IID, optional FID, SEX) — auto-detected |
-
-Sample IDs are read from the `#IID` column of the `.psam` file. Do **not** pass a `--sample` file for PGEN input.
-
-**Example commands for BED and PGEN input:**
+**Example command for BED input:**
 
 ```bash
 # PLINK 1.x BED format (no --sample needed)
@@ -233,17 +221,6 @@ python RunTorchGWAS.py \
   --out results.txt \
   --device cuda
 
-# PLINK 2.0 PGEN format (no --sample needed)
-python RunTorchGWAS.py \
-  --pheno-file pheno.csv \
-  --cov-file cov.csv \
-  --bgen data.pgen \
-  --sampleid-name IID \
-  --covar-names PC1 PC2 PC3 \
-  --threads 8 \
-  --stream-snps 1000 \
-  --out results.txt \
-  --device cuda
 ```
 
 ### Phenotype File
@@ -346,7 +323,7 @@ The analysis automatically runs two sequential stages:
 
 ### Stage 2: Association Testing (GPU/CPU)
 **Performed by run_gwas using PyTorch backend**
-- Streams genotype data in chunks (`--stream-snps` parameter) from BGEN, BED, or PGEN files
+- Streams genotype data in chunks (`--stream-snps` parameter) from BGEN or BED files
 - All formats expose an identical `(dosage_matrix, metadata)` chunk interface — downstream GWAS computation is format-agnostic
 - Tests each variant for association with phenotypes using fitted null model
 - Computes test statistics efficiently on GPU (CUDA) or CPU
@@ -394,7 +371,7 @@ rs67890    1    20000    C    T    -0.02    0.018    -1.1    0.27    0.01    0.0
 - **Sparse Matrices**: SuiteSparse v7.8.2 (CHOLMOD, UMFPACK, SPQR)
 - **I/O Libraries**: Boost (program_options, thread, system, filesystem)
 - **Compression**: zstd 1.5.5, libdeflate 1.18
-- **Genotype Reading**: BGEN (plink2 backend), PLINK 1.x BED (direct multi-threaded reader), PLINK 2.0 PGEN (pgenlib)
+- **Genotype Reading**: BGEN reader and PLINK 1.x BED direct multi-threaded reader. BED reading uses standard file I/O and does not link against PLINK/pgenlib.
 - **Python Bindings**: pybind11 v2.12.0, fmt 11.0.2
 
 ### Runtime Stage (nvidia/cuda:12.6.0-runtime-ubuntu24.04)
@@ -588,7 +565,11 @@ docker run --gpus all \
 
 ## License
 
-[Specify your license here]
+TorchGWAS is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+
+You may redistribute and/or modify this project under the terms of the GNU GPL version 3, or any later version published by the Free Software Foundation. When distributing this software or derivative works, include the corresponding source code and a copy of the GPLv3 license text.
+
+Third-party components included in `thirdparty/` remain under their respective licenses. See the license files in each third-party directory for details.
 
 ## Contact
 
