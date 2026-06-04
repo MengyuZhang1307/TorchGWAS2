@@ -228,8 +228,9 @@ include(FetchContent)
 set(FETCHCONTENT_BASE_DIR /data484_5/xzhao14/cmake_deps)
 
 file(GLOB SRC "src/*.cpp")
-file(GLOB CC_SOURCES "thirdparty/plink-2.0/*.cc")
-file(GLOB C_SOURCES 
+# plink-2.0 pgenlib sources are no longer compiled — BED reading uses
+# standard C file I/O only (no LGPL dependency).
+file(GLOB C_SOURCES
     "thirdparty/zstd-1.5.5/lib/common/*.c"
     "thirdparty/zstd-1.5.5/lib/compress/*.c"
     "thirdparty/zstd-1.5.5/lib/decompress/*.c"
@@ -237,8 +238,7 @@ file(GLOB C_SOURCES
     "thirdparty/libdeflate-1.18/lib/x86/*.c"
     "thirdparty/libdeflate-1.18/lib/arm/*.c"
 )
-# Concatenate the two lists of source files
-set(SOURCES ${SRC} ${CC_SOURCES} ${C_SOURCES})
+set(SOURCES ${SRC} ${C_SOURCES})
 # Fetch fmt ======================================================
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(FMT_POSITION_INDEPENDENT_CODE ON CACHE BOOL "" FORCE) #required for shared libraries forMygen.so
@@ -431,8 +431,6 @@ target_include_directories(Mygen PRIVATE
     ${suitesparse_SOURCE_DIR}/COLAMD/Include
     ${suitesparse_SOURCE_DIR}/AMD/Include
     ${suitesparse_SOURCE_DIR}/SuiteSparse_config
-    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/plink-2.0
-    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/plink-2.0/include
 )
 target_include_directories(Mygen PRIVATE ${pybind11_INCLUDE_DIRS})
 message(STATUS "pybind11 include dirs: ${pybind11_INCLUDE_DIRS}")

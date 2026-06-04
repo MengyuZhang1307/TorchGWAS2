@@ -11,20 +11,6 @@
 
 namespace fs = std::filesystem;
 
-/**
- * @brief Destructor - cleanup pgenlib resources
- */
-Plink::~Plink()
-{
-    plink2::PglErr cleanup_err = plink2::kPglRetSuccess;
-    if (pgfi_inited) {
-        plink2::CleanupPgfi(&pgfi, &cleanup_err);
-    }
-    if (pgfi_alloc) {
-        free(pgfi_alloc);
-        pgfi_alloc = nullptr;
-    }
-}
 
 /**
  * @brief Detect companion files (.bim, .fam) for BED file
@@ -99,104 +85,51 @@ void Plink::process_plink_header_block(std::string const& pgen_or_bed_file)
         format_type = "BED";
         spdlog::info("Processing PLINK 1.x BED file: {}", pgen_or_bed_file);
         detect_bed_companion_files(pgen_or_bed_file);
-    } else if (ext == ".pgen") {
-        format_type = "PGEN";
-        spdlog::info("Processing PLINK 2.0 PGEN file: {}", pgen_or_bed_file);
-        detect_pgen_companion_files(pgen_or_bed_file);
     } else {
-        throw std::runtime_error("ERROR: Invalid PLINK file extension. Expected .bed or .pgen");
+        throw std::runtime_error(
+            "ERROR: Unsupported file extension '" + ext + "'. Only .bed is supported.");
     }
 
-    // Read variant information from .bim or .pvar
-    if (format_type == "BED") {
-        read_bim_file(pvar_path);
-    } else {
-        read_pvar_file(pvar_path);
+    // Read variant information from .bim
+    read_bim_file(pvar_path);
+    raw_variant_ct = static_cast<uint32_t>(variant_ids.size());
+
+    // Validate BED magic bytes (0x6c 0x1b 0x01 = PLINK 1.x SNP-major format).
+    // This requires no external library — plain C file I/O.
+    {
+        FILE* fp = std::fopen(pgen_or_bed_file.c_str(), "rb");
+        if (!fp)
+            throw std::runtime_error("ERROR: Cannot open BED file: " + pgen_or_bed_file);
+        uint8_t magic[3] = {0, 0, 0};
+        std::fread(magic, 1, 3, fp);
+        std::fclose(fp);
+        if (magic[0] != 0x6c || magic[1] != 0x1b || magic[2] != 0x01)
+            throw std::runtime_error(
+                "ERROR: Invalid BED file — bad magic bytes. "
+                "File must be in PLINK 1.x SNP-major format.");
     }
 
-    raw_variant_ct = variant_ids.size();
-
-    // BED files do not store sample count in their header — count from .fam/.psam first.
-    // For PGEN, the header contains the count so we can pass 0, but counting from psam
-    // is safe for both formats.
-    uint32_t pre_sample_ct = 0;
+    // Count samples from .fam (BED header does not store sample count)
+    raw_sample_ct = 0;
     {
         std::ifstream fsam(psam_path);
         std::string tmpline;
         while (std::getline(fsam, tmpline)) {
-            if (tmpline.empty()) continue;
-            if (tmpline[0] == '#') continue;  // skip header/comment lines in psam
-            ++pre_sample_ct;
+            if (!tmpline.empty()) ++raw_sample_ct;
         }
     }
-    if (pre_sample_ct == 0) {
+    if (raw_sample_ct == 0)
         throw std::runtime_error("ERROR: No samples found in " + psam_path);
-    }
-    spdlog::info("Sample count from companion file: {}", pre_sample_ct);
-
-    // Initialize pgenlib
-    plink2::PreinitPgfi(&pgfi);
-
-    char errstr_buf[plink2::kPglErrstrBufBlen];
-    uintptr_t pgfi_alloc_cacheline_ct;
-
-    plink2::PglErr reterr = plink2::PgfiInitPhase1(
-        pgen_path.c_str(),
-        nullptr,          // pgi_fname (no external index file)
-        raw_variant_ct,
-        pre_sample_ct,    // required for BED (not stored in BED header)
-        &header_ctrl,
-        &pgfi,
-        &pgfi_alloc_cacheline_ct,
-        errstr_buf
-    );
-
-    if (reterr != plink2::kPglRetSuccess) {
-        throw std::runtime_error(std::string("ERROR: Failed to initialize PLINK file reader (Phase 1): ") + errstr_buf);
-    }
-
-    raw_sample_ct = pgfi.raw_sample_ct;
-
-    if (pgfi_alloc_cacheline_ct > 0) {
-        pgfi_alloc = static_cast<unsigned char*>(malloc(pgfi_alloc_cacheline_ct * plink2::kCacheline));
-        if (!pgfi_alloc) {
-            throw std::runtime_error("ERROR: Failed to allocate memory for PLINK pgfi");
-        }
-    }
-
-    reterr = plink2::PgfiInitPhase2(
-        header_ctrl,
-        0,               // allele_cts_already_loaded
-        0,               // nonref_flags_already_loaded
-        0,               // use_blockload
-        0,               // vblock_idx_start
-        raw_variant_ct,  // vidx_end
-        &max_vrec_width,
-        &pgfi,
-        pgfi_alloc,
-        &pgr_alloc_cacheline_ct,
-        errstr_buf
-    );
-
-    if (reterr != plink2::kPglRetSuccess) {
-        throw std::runtime_error(std::string("ERROR: Failed to initialize PLINK file reader (Phase 2): ") + errstr_buf);
-    }
-
-    pgfi_inited = true;
 
     spdlog::info("****************************************************************************");
     spdlog::info("General information of PLINK file:");
-    spdlog::info("  Format: {}", format_type);
+    spdlog::info("  Format: BED");
     spdlog::info("  Number of variants: {}", raw_variant_ct);
     spdlog::info("  Number of samples: {}", raw_sample_ct);
     spdlog::info("****************************************************************************");
 
-    if (raw_variant_ct == 0) {
+    if (raw_variant_ct == 0)
         throw std::runtime_error("ERROR: Number of variants in PLINK file is 0");
-    }
-    if (raw_sample_ct == 0) {
-        throw std::runtime_error("ERROR: Number of samples in PLINK file is 0");
-    }
 }
 
 /**
