@@ -1,11 +1,11 @@
-# TorchGWAS with Null Model Fitting
+# TorchGWAS2 with Null Model Fitting
 
 A GPU-accelerated GWAS analysis tool with efficient null model fitting and PyTorch-based association testing for genome-wide association studies.
 
 ## Features
 
 - **Null Model Fitting**: CPU-based mixed model fitting with Intel MKL optimization
-- **TorchGWAS**: GPU/CPU-accelerated GWAS analysis using PyTorch
+- **TorchGWAS2**: GPU/CPU-accelerated GWAS analysis using PyTorch
 - **BGEN format support**: Efficient genotype data streaming
 - **PLINK BED format support**: Multi-threaded genotype reading for PLINK 1.x (BED/BIM/FAM) files; companion files are auto-detected from the base file path
 - **Docker support**: Containerized environment with CUDA 12.4
@@ -150,7 +150,7 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 
 ### Genotype File Formats
 
-TorchGWAS supports two genotype file formats, selected automatically based on the file extension passed to `--bgen`.
+TorchGWAS2 supports two genotype file formats, selected automatically based on the file extension passed to `--bgen`.
 
 #### BGEN Format (`.bgen`)
 Standard BGEN file with a separate `.sample` file. Pass `--bgen data.bgen --sample data.sample`.
@@ -420,7 +420,7 @@ docker run --gpus all \
 
 ## License
 
-TorchGWAS is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+TorchGWAS2 is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
 
 You may redistribute and/or modify this project under the terms of the GNU GPL version 3, or any later version published by the Free Software Foundation. When distributing this software or derivative works, include the corresponding source code and a copy of the GPLv3 license text.
 
