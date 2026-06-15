@@ -129,7 +129,6 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
   - One variant identifier per line after header
 
 #### Model Specification
-- `--random-slope-name`: Column name in covariate file for random slope effects (default: `""`, no random slope; not supported in this version)
 - `--missing-value`: Indicator for missing values in phenotype and covariate files (default: `NA`)
 
 #### Performance Settings
