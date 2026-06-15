@@ -1,21 +1,21 @@
-# TorchGWAS with Null Model Fitting
+# TorchGWAS2 with Null Model Fitting
 
 A GPU-accelerated GWAS analysis tool with efficient null model fitting and PyTorch-based association testing for genome-wide association studies.
 
 ## Features
 
 - **Null Model Fitting**: CPU-based mixed model fitting with Intel MKL optimization
-- **TorchGWAS**: GPU/CPU-accelerated GWAS analysis using PyTorch
+- **TorchGWAS2**: GPU/CPU-accelerated GWAS analysis using PyTorch
 - **BGEN format support**: Efficient genotype data streaming
 - **PLINK BED format support**: Multi-threaded genotype reading for PLINK 1.x (BED/BIM/FAM) files; companion files are auto-detected from the base file path
-- **Docker support**: Containerized environment with CUDA 12.6
+- **Docker support**: Containerized environment with CUDA 12.4
 
 ## Requirements
 
 ### Host System Requirements
 - Docker Engine (20.10+)
 - NVIDIA Docker runtime (for GPU support, optional)
-- NVIDIA GPU with CUDA 12.6 support (optional, can run on CPU)
+- NVIDIA GPU with CUDA 12.4 support (optional, can run on CPU)
 
 **All other dependencies (GCC, CMake, MKL, Boost, etc.) are included in the Docker image!**
 
@@ -25,24 +25,24 @@ A GPU-accelerated GWAS analysis tool with efficient null model fitting and PyTor
 
 ```bash
 # Clone the repository
-git clone https://github.com/MengyuZhang1307/Bgen-reader-torchgwas.git
-cd Bgen-reader-torchgwas
+git clone https://github.com/hanchenlab/TorchGWAS2.git
+cd TorchGWAS2
 
 # Build the Docker image (this will take 10-15 minutes)
-docker build -t torchgwas:latest .
+docker build -t torchgwas2:latest .
 
 # Verify the image was built successfully
-docker images | grep torchgwas
+docker images | grep torchgwas2
 ```
 
 **Image Details:**
 - Size: ~10.8 GB
-- Base: nvidia/cuda:12.6.0-runtime-ubuntu24.04
+- Base: nvidia/cuda:12.4.0-runtime-ubuntu22.04
 - Includes: All dependencies (GCC, CMake, MKL, Boost, PyTorch, etc.)
 
 ## Usage
 
-### Run with GPU Support (Requires NVIDIA Docker Runtime???????)
+### Run with GPU Support
 
 **Note:** GPU support requires `nvidia-docker2` package installed on your host system. If not available, use CPU mode below.
 
@@ -64,7 +64,7 @@ docker run --gpus all \
   --convert
 ```
 
-### Run with CPU Only (No GPU Required)
+### Run with CPU Only
 
 ```bash
 docker run --rm \
@@ -85,37 +85,6 @@ docker run --rm \
   --convert
 ```
 
-### Run Example Data
-
-Test the installation with provided example data:
-
-```bash
-# Navigate to repository directory
-cd Bgen-reader-torchgwas
-
-# Run example analysis (CPU mode)
-docker run --rm \
-  -v $(pwd):/workspace \
-  -w /workspace \
-  torchgwas:latest \
-  --pheno-file example/pheno.txt \
-  --cov-file example/cov.txt \
-  --bgen example/SA.bgen \
-  --sample example/SA.sample \
-  --sampleid-name id \
-  --covar-names x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 \
-  --kin-file example/kinfile.txt \
-  --kin-delim tab \
-  --kin-diag 1 \
-  --threads 10 \
-  --stream-snps 100 \
-  --out example/results.txt \
-  --device cpu \
-  --verbose
-
-# Results will be in example/results.txt and example/TGWAS_results.txt.parquet
-```
-
 ### Interactive Shell Access
 
 To explore the container or debug:
@@ -131,13 +100,13 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 ## Command-Line Arguments
 
 ### Required Arguments:
-- `--pheno-file`: Path to phenotype file (must have FID, IID, and phenotype columns)
-- `--cov-file`: Path to covariate file (must have FID, IID, and covariate columns)
+- `--pheno-file`: Path to phenotype file (must have family ID, individual ID, and phenotype columns)
+- `--cov-file`: Path to covariate file (must have family ID, individual ID, and covariate columns)
 - `--bgen`: Path to the genotype file. Accepts two formats (detected automatically by file extension):
   - **BGEN** (`.bgen`): BGEN format — requires a companion `--sample` file
   - **BED** (`.bed`): PLINK 1.x format — companion `.bim` and `.fam` files must exist in the same directory with the same base name
 - `--sample`: Path to BGEN sample file (required for BGEN format only; not used for BED)
-- `--sampleid-name`: Sample ID column header name (the **second column** in phenotype and covariate files, after FID). Examples: `IID`, `id`, `sampleid`
+- `--sampleid-name`: Sample ID column header name (the **second column** in phenotype and covariate files, after family ID). Examples: `IID`, `id`, `sampleid`
 - `--covar-names`: Space-separated list of covariate column names to include in the model (e.g., `PC1 PC2 PC3`)
 
 ### Optional Arguments:
@@ -160,7 +129,7 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
   - One variant identifier per line after header
 
 #### Model Specification
-- `--random-slope-name`: Column name in covariate file for random slope effects (default: `""`, no random slope)
+- `--random-slope-name`: Column name in covariate file for random slope effects (default: `""`, no random slope; not supported in this version)
 - `--missing-value`: Indicator for missing values in phenotype and covariate files (default: `NA`)
 
 #### Performance Settings
@@ -174,12 +143,14 @@ docker run -it -v /path/to/your/data:/data torchgwas:latest /bin/bash
 - `--convert`: Convert parquet output to text file (default: `True`)
   - When `True`: Creates both `.parquet` and `.txt` output files
   - When `False`: Only creates `.parquet` output file
+- `--log`: Output log file
+- `--null-log`: Output null model fitting log file
 
 ## Input File Formats
 
 ### Genotype File Formats
 
-TorchGWAS supports two genotype file formats, selected automatically based on the file extension passed to `--bgen`.
+TorchGWAS2 supports two genotype file formats, selected automatically based on the file extension passed to `--bgen`.
 
 #### BGEN Format (`.bgen`)
 Standard BGEN file with a separate `.sample` file. Pass `--bgen data.bgen --sample data.sample`.
@@ -224,7 +195,7 @@ python RunTorchGWAS.py \
 ```
 
 ### Phenotype File
-Tab, comma, or space-separated file with header. **Must have at least 3 columns**: FID (family ID), IID (individual ID), and at least one phenotype column. Can contain multiple phenotypes:
+Tab, comma, or space-separated file with header. **Must have at least 3 columns**: family ID (FID), individual ID (IID), and at least one phenotype column. Can contain multiple phenotypes:
 ```
 fid    id    pheno1    pheno2
 1      sample1    0.5    1.2
@@ -233,13 +204,13 @@ fid    id    pheno1    pheno2
 ```
 
 **Important:** 
-- First column: FID (family ID)
+- First column: family ID (e.g. `FID`)
 - Second column: Individual ID - the column name must match the value provided to `--sampleid-name` (e.g., `id`, `IID`, `sampleid`)
 - Remaining columns: Phenotype values
 - Missing values should be coded as specified by `--missing-value` (default: `NA`)
 
 ### Covariate File
-Tab, comma, or space-separated file with header. **Must have at least 3 columns**: FID (family ID), IID (individual ID), and at least one covariate column:
+Tab, comma, or space-separated file with header. **Must have at least 3 columns**: family ID (FID), individual ID (IID), and at least one covariate column:
 ```
 fid    id    PC1    PC2    age    sex
 1      sample1    0.1    -0.2    45    1
@@ -248,7 +219,7 @@ fid    id    PC1    PC2    age    sex
 ```
 
 **Important:** 
-- First column: FID (family ID)
+- First column: family ID
 - Second column: Individual ID - the column name must match the value provided to `--sampleid-name`
 - Remaining columns: Covariate values
 - Column names specified in `--covar-names` must exactly match the header names in this file (case-sensitive)
@@ -278,8 +249,7 @@ sample_002,sample_002,1.05432
 - **Three columns maximum**: ID1, ID2, and kinship value
 - Header names can be any text (e.g., id1/id2/kinship or ID1/ID2/value)
 - Can include all pairwise combinations or just upper/lower triangle with diagonal
-- Diagonal values typically range from 0.5 to 1.0 depending on the calculation method
-- Use `--kin-diag` to specify the expected diagonal value when kinship file is not provided
+- Diagonal values can be 0 (if self pairs are provided in the kinship file), 0.5 or 1.0
 
 ### Include SNP File (optional)
 Single-column file with header specifying variant identifiers. First line must be either `snpid` or `rsid`:
@@ -353,19 +323,18 @@ The analysis produces GWAS results in two formats:
 - **Association statistics** (for each phenotype):
   - Beta coefficients (effect sizes)
   - Standard errors (SE)
-  - T-statistics
   - P-values
 
 **Example output format:**
 ```
-rsid    chr    pos    ref    alt    pheno1_BETA    pheno1_SE    pheno1_T    pheno1_P    pheno2_BETA    pheno2_SE    pheno2_T    pheno2_P
-rs12345    1    10000    A    G    0.05    0.02    2.5    0.012    0.03    0.015    2.0    0.045
-rs67890    1    20000    C    T    -0.02    0.018    -1.1    0.27    0.01    0.012    0.83    0.40
+rsid    chr    pos    ref    alt    pheno1_BETA    pheno1_SE    pheno1_P    pheno2_BETA    pheno2_SE    pheno2_P
+rs12345    1    10000    A    G    0.05    0.02    0.012    0.03    0.015    0.045
+rs67890    1    20000    C    T    -0.02    0.018    0.27    0.01    0.012    0.40
 ```
 
 ## Docker Image Details
 
-### Build Stage (ubuntu:24.04)
+### Build Stage (ubuntu:22.04)
 - **Compiler**: GCC 13 with C++20 support
 - **Linear Algebra**: Intel MKL + Eigen 3.4.0 + Armadillo 14.0.1
 - **Sparse Matrices**: SuiteSparse v7.8.2 (CHOLMOD, UMFPACK, SPQR)
@@ -374,8 +343,8 @@ rs67890    1    20000    C    T    -0.02    0.018    -1.1    0.27    0.01    0.0
 - **Genotype Reading**: BGEN reader and PLINK 1.x BED direct multi-threaded reader. BED reading uses standard file I/O and does not link against PLINK/pgenlib.
 - **Python Bindings**: pybind11 v2.12.0, fmt 11.0.2
 
-### Runtime Stage (nvidia/cuda:12.6.0-runtime-ubuntu24.04)
-- **CUDA**: 12.6 runtime for GPU acceleration (backward compatible with PyTorch CUDA 12.1)
+### Runtime Stage (nvidia/cuda:12.4.0-runtime-ubuntu22.04)
+- **CUDA**: 12.4 runtime for GPU acceleration (backward compatible with PyTorch CUDA 12.1)
 - **PyTorch**: 2.5.1+cu121 with CUDA 12.1 support
 - **MKL Runtime**: Intel MKL libraries (sequential threading, no OpenMP conflicts)
 - **Python Stack**: NumPy, Pandas, SciPy, PyArrow, DuckDB, tqdm
@@ -412,121 +381,7 @@ External runtime dependencies (dynamically linked):
 ## Performance Tips
 
 1. **CPU Threads**: Set `--threads` to match your CPU core count for optimal null model fitting
-2. **GPU Memory**: Adjust `--stream-snps` based on available VRAM:
-   - 8GB GPU: `--stream-snps 500`
-   - 16GB GPU: `--stream-snps 1000`
-   - 24GB+ GPU: `--stream-snps 2000`
-3. **Kinship Matrix**: Pre-compute and provide kinship matrix to speed up null model fitting
-4. **Chunk Size**: Larger `--stream-snps` increases memory but may improve throughput
-5. **Data Volume**: Always mount your data directory with `-v` for persistent results
-
-## Troubleshooting
-
-### Missing Required Arguments
-```bash
-# Error: "--covar-names is required"
-# Solution: Always provide covariate names
-docker run --gpus all -v /data:/data torchgwas:latest \
-  --pheno-file /data/pheno.txt \
-  --cov-file /data/cov.txt \
-  --bgen /data/genotypes.bgen \
-  --sample /data/samples.sample \
-  --sampleid-name IID \
-  --covar-names PC1 PC2 PC3 age sex  # <-- Required!
-  
-# Error: "--sampleid-name is required"
-# Solution: Specify the sample ID column header name from your files
---sampleid-name id  # or IID, sampleid, etc.
-```
-
-### Column Name Mismatch
-```bash
-# Error: Covariate column not found
-# Cause: Column names in --covar-names don't match covariate file headers
-# Solution: Check your covariate file headers exactly
-head -1 /data/cov.txt  # Shows: id,PC1,PC2,PC3
-# Then use exact names:
---covar-names PC1 PC2 PC3  # Not pc1, not Pc1
-```
-
-### Delimiter Issues
-```bash
-# If you see parsing errors, verify your delimiter settings
-# For tab-separated files:
---pheno-delim tab --cov-delim tab
-
-# For space-separated files:
---cov-delim space
-
-# For mixed delimiters:
---pheno-delim "," --cov-delim tab --kin-delim space
-
-# Acceptable delimiter formats:
-# Tab: tab, \t, t, TAB
-# Space: space, \0, 0, or literal space
-# Comma: ,
-```
-
-### Docker GPU Access
-```bash
-# Test if GPU is accessible from Docker
-docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi
-
-# If you get error "could not select device driver with capabilities: [[gpu]]"
-# You need to install nvidia-docker2:
-
-# For Ubuntu/Debian:
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
-  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-
-sudo apt-get update && sudo apt-get install -y nvidia-docker2
-sudo systemctl restart docker
-
-# Verify installation
-docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi
-
-# If GPU is not available or not needed, simply use CPU mode:
-# Remove --gpus all flag and set --device cpu
-```
-
-### GPU Out of Memory
-```bash
-# Reduce chunk size
---stream-snps 500
-
-# Or use CPU
---device cpu
-```
-
-### Permission Issues with Output Files
-```bash
-# Run with same user ID as host
-docker run --gpus all --user $(id -u):$(id -g) \
-  -v /path/to/your/data:/data \
-  torchgwas:latest [arguments]
-```
-
-### Cannot Access Data Files
-```bash
-# Ensure correct path mapping
-# Host path: /home/user/gwas_data/pheno.txt
-# Container path: /data/pheno.txt
-docker run --gpus all \
-  -v /home/user/gwas_data:/data \
-  torchgwas:latest \
-  --pheno-file /data/pheno.txt
-```
-
-### Container Build Fails
-```bash
-# Clean build with no cache
-docker build --no-cache -t torchgwas:latest .
-
-# Check available disk space
-df -h
-```
+2. **GPU Memory**: Adjust `--stream-snps` based on available VRAM
 
 ## Example Workflow
 
@@ -565,7 +420,7 @@ docker run --gpus all \
 
 ## License
 
-TorchGWAS is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+TorchGWAS2 is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
 
 You may redistribute and/or modify this project under the terms of the GNU GPL version 3, or any later version published by the Free Software Foundation. When distributing this software or derivative works, include the corresponding source code and a copy of the GPLv3 license text.
 
@@ -573,4 +428,4 @@ Third-party components included in `thirdparty/` remain under their respective l
 
 ## Contact
 
-[Your contact information]
+For comments, suggestions, bug reports and questions, please contact Han Chen (han.chen@nyu.edu) and Mengyu Zhang (mengyu1307@gmail.com). For bug reports, please include an example to reproduce the problem without having to access your confidential data.
