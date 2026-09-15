@@ -130,7 +130,7 @@ Sample IDs for BED input are read from the `.fam` file's second column (IID) and
 ### Phenotype file
 Delimited (see [delimiters](#file-delimiter-options)), with a header row. At least 3 columns: family ID, individual ID, and one or more phenotype columns.
 ```
-fid    IID       pheno1    pheno2
+FID    IID       pheno1    pheno2
 1      sample1   0.5       1.2
 1      sample2   0.8       1.5
 2      sample3   NA        1.3
