@@ -66,10 +66,22 @@ class SparseInverse
         char kin_delim; 
 
         SparseInverse() =  default;
-        SparseInverse(const std::string kin_add, const std::string cov_add, const char kin_delim,
-                      const double kin_diag, const char cov_delim, const std::string &m_sam_id,
-                      const std::ext::V_string &m_v_hdrs, std::ext::V_string &bgen_sample_id,
-                      const std::string missing_key, std::set<int> pheno_valid_indices);
+        SparseInverse(Cov &cov_copy,const std::string kin_add, 
+                      const char kin_delim,
+                      const double kin_diag, const char cov_delim, 
+                      std::ext::V_string &bgen_sample_id,
+                      const std::string missing_key, 
+                      std::ext::V_int pheno_valid_indices, bool remove_missing = true);
+        // Copy constructor
+        SparseInverse(const SparseInverse&) = default;
+        // Copy assignment
+        SparseInverse& operator=(const SparseInverse&) = default;
+
+        // Move constructor
+        SparseInverse(SparseInverse&&) noexcept = default;
+        // Move assignment
+        SparseInverse& operator=(SparseInverse&&) noexcept = default;
+
         void set_idx_mp(std::ext::V_string v_strs);
         //to create kinship from unique IDs
         void set_idx_mp_uniqkin(std::ext::V_string v_strs);

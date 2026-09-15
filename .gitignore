@@ -1,5 +1,9 @@
 build/
-.vscode/
-workspace.code-workspace
-.DS_Store
-out*.*
+build*
+results/
+__pycache__/
+pymodules/*.so
+PLINK_SUPPORT_IMPLEMENTATION.md
+CMakeLists_backup.txt
+*.log
+correction.txt

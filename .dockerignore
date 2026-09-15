@@ -1,0 +1,10 @@
+build/
+data/
+test/
+example/
+missing-simulationbyMengyu/
+split_txt/
+build*/
+out*
+output/
+

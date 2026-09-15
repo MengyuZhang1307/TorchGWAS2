@@ -1,4 +1,5 @@
 #include "Kinship.h"
+#include <stdexcept>
 namespace details
 {
     void add_dquot(std::ext::V_string& v_strs)
@@ -15,11 +16,11 @@ void Kinship::read_file(std::string_view path, char delim)
 {
     m_data_frame.read_file(path, delim);
 
-    if(m_data_frame.m_headers.size() > 3)
+    if(m_data_frame.m_headers.size() != 3)
     {
-        fmt::print("Erro in kinship files, the number of the columns in {} exceeds 3\n",
-        path);
-        exit(EXIT_FAILURE);
+        throw std::runtime_error(
+            fmt::format("Erro in kinship files, the number of the columns in {} exceeds 3", path)
+        );
     }
     add_dquot();
 } 

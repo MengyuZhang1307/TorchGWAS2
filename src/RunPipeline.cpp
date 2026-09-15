@@ -1,26 +1,94 @@
 #include "RunPipeline.h"
+#include "Logger.h"
 
-GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt) 
+
+GEMRunner::GEMRunner(const GEMOptions& user_opt, bool match_ids) : opt(user_opt)
 {
+    if(!match_ids)
+    {
+        LoggerSetup::init(opt.null_log_file); // Log fitting he null model, only for step 1
+    }
     find_genofile_type();
     check_kinship_usage();
     // Step 1:  Read covariate file
     shared_cov_result = read_covariate_data();
 
-    // Step 2: Read phenotype file
-    process_phenotype_file();
+    // Step 2: Process genotype file based on format type
+    if (genofile_type == "BGEN")
+    {
+        // Process BGEN format
+        bgen.process_bgen_header_block(opt.geno_add);
+        if(match_ids)
+        {
+            bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                        shared_cov_result.covMap, opt.missing_key,
+                                        shared_cov_result.numSelCol,
+                                        shared_cov_result.samSize, opt.corr_file, match_ids);
+        }
+        else
+        {
+            bgen.process_bgen_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                            shared_cov_result.covMap, opt.missing_key,
+                                            shared_cov_result.numSelCol,
+                                            shared_cov_result.samSize);
+        }
 
-    // Step 3: Clean covariate map based on valid phenotype samples
-    clean_covMap_by_invalid_indices();
-    // Step 4 run BGEN metods
-    bgen.process_bgen_header_block(opt.geno_file);
-    bgen.process_bgen_sample_block(opt.sample_file.c_str(), opt.use_sample_file, 
-                                    shared_cov_result.covMap, opt.missing_key, 
-                                    shared_cov_result.numSelCol, 
-                                    shared_cov_result.samSize);   
-    bgen.get_position_bgen_variant(opt.num_chunks, opt.includeVariantFile,
-                                             opt.do_filters);
-    bgen_sample_id = bgen.sampleID;
+        std::ext::V_string new_cov_hdrs;
+        for (int i=0; i< opt.covariates.size(); i++)
+        {
+            if (std::find(bgen.excludeCol.begin(), bgen.excludeCol.end(), (i+1)) == bgen.excludeCol.end()) // i+1 as first col is intercept
+            {
+                new_cov_hdrs.push_back(opt.covariates[i]);
+            }
+        }
+
+        opt.covariates = new_cov_hdrs;
+        new_cov_hdrs.resize(0);
+        bgen_sample_id = bgen.sampleID;
+        bgen.filterVariants = opt.do_filters;
+    }
+    else if (genofile_type == "BED" || genofile_type == "PGEN")
+    {
+        // Process PLINK format (BED or PGEN)
+        plink.process_plink_header_block(opt.geno_add);
+        if(match_ids)
+        {
+            plink.process_plink_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                        shared_cov_result.covMap, opt.missing_key,
+                                        shared_cov_result.numSelCol,
+                                        shared_cov_result.samSize, opt.corr_file, match_ids);
+        }
+        else
+        {
+            plink.process_plink_sample_block(opt.sample_add.c_str(), opt.use_sample_file,
+                                            shared_cov_result.covMap, opt.missing_key,
+                                            shared_cov_result.numSelCol,
+                                            shared_cov_result.samSize);
+        }
+
+        std::ext::V_string new_cov_hdrs;
+        for (int i=0; i< opt.covariates.size(); i++)
+        {
+            if (std::find(plink.excludeCol.begin(), plink.excludeCol.end(), (i+1)) == plink.excludeCol.end()) // i+1 as first col is intercept
+            {
+                new_cov_hdrs.push_back(opt.covariates[i]);
+            }
+        }
+
+        opt.covariates = new_cov_hdrs;
+        new_cov_hdrs.resize(0);
+        bgen_sample_id = plink.sampleID;
+        plink.filterVariants = opt.do_filters;
+        plink.includeVariantFile = opt.includeVariantFile;
+    }
+
+    is_dup_id = shared_cov_result.cov_is_duplicated;
+    // free heavy members
+    shared_cov_result.sampleID_list.clear();
+    shared_cov_result.covMap.clear();
+    shared_cov_result.valid_indices.clear();
+    shared_cov_result.samSize = 0;
+    shared_cov_result.numSelCol = 0;
 }
 
 /**
@@ -31,7 +99,7 @@ GEMRunner::GEMRunner(const GEMOptions& user_opt) : opt(user_opt)
 
 void GEMRunner::find_genofile_type()
 {
-    std::string ext = fs::path(opt.geno_file).extension().string();
+    std::string ext = fs::path(opt.geno_add).extension().string();
         if (ext == ".bgen") 
         {
             genofile_type = "BGEN";
@@ -56,13 +124,13 @@ void GEMRunner::find_genofile_type()
 /**
  * @brief reade covariate file
  * 
- * @param cov_file 
+ * @param cov_add
  * @param opt.covariates 
  * @param opt.exposures 
  * @param opt.interactions 
  * @param opt.sampleid_header_name 
  * @param opt.random_slope_header_name 
- * @param opt.delim_cov 
+ * @param opt.cov_delim
  * @param opt.missing_key 
  * @return CovariateReadResult: Structure containing parsed data.
  */
@@ -72,18 +140,10 @@ CovariateReadResult GEMRunner::read_covariate_data()
     bool& cov_is_duplicated = result.cov_is_duplicated;
     cov_is_duplicated = false;
 
-    int numExpSelCol = opt.exposures.size();
-    int numIntSelCol = opt.interactions.size();
-
-    for (int i = numIntSelCol - 1; i >= 0; --i)
-        opt.covariates.insert(opt.covariates.begin(), opt.interactions[i]);
-    for (int i = numExpSelCol - 1; i >= 0; --i)
-        opt.covariates.insert(opt.covariates.begin(), opt.exposures[i]);
-
-    result.numSelCol = opt.covariates.size() - numExpSelCol - numIntSelCol;
+    result.numSelCol = opt.covariates.size();
     std::ext::V_int colSelVec(opt.covariates.size());
 
-    std::ifstream fincov(opt.cov_file);
+    std::ifstream fincov(opt.cov_add);
     if (fincov.fail()) 
     {
         throw std::runtime_error("ERROR: Cannot open covariate file");
@@ -94,7 +154,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
     std::getline(fincov, line);
     std::istringstream issHead(line);
     int header_i = 0;
-    while (std::getline(issHead, headerName, opt.delim_cov)) 
+    while (std::getline(issHead, headerName, opt.cov_delim)) 
     {
         headerName.erase(std::remove(headerName.begin(), headerName.end(), '\r'), headerName.end());
         headerName.erase(std::remove(headerName.begin(), headerName.end(), '"'), headerName.end());
@@ -115,10 +175,6 @@ CovariateReadResult GEMRunner::read_covariate_data()
             throw std::runtime_error("ERROR: Random slope column not found");
     }
 
-    for (const auto& h : opt.exposures)
-        if (!colNames.count(h)) throw std::runtime_error("ERROR: Exposure column not found: " + h);
-    for (const auto& h : opt.interactions)
-        if (!colNames.count(h)) throw std::runtime_error("ERROR: Interaction column not found: " + h);
     for (size_t i = 0; i < opt.covariates.size(); ++i) 
     {
         if (!colNames.count(opt.covariates[i]))
@@ -147,7 +203,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
         std::istringstream iss(line);
         std::string value;
         std::ext::V_string values;
-        while (std::getline(iss, value, opt.delim_cov)) values.push_back(value);
+        while (std::getline(iss, value, opt.cov_delim)) values.push_back(value);
 
         if (values.size() == colNames.size() - 1) values.push_back("");
         if (values.size() != colNames.size())
@@ -159,7 +215,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
             cov_is_duplicated = true;
         }
 
-        bool has_missing;
+        bool has_missing = false;
         std::ext::V_string entry;
         for (int c : colSelVec) 
         {
@@ -185,10 +241,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
     fincov.close();
 
     // Check for potential categorical variables by counting unique values
-    std::cout << "\n****************************************************************************\n";
-    std::cout << "Checking for potential categorical variables...\n";
-    std::cout << "****************************************************************************\n";
-    
+    std::cout << "Checking for potential categorical variables...\n";    
     const int CATEGORICAL_THRESHOLD = 10; // Consider as categorical if <= 10 unique values
     
     // For each covariate column, count unique values
@@ -265,7 +318,7 @@ CovariateReadResult GEMRunner::read_covariate_data()
                 std::cout << "         This may be a categorical variable with multiple levels.\n";
                 std::cout << "         RECOMMENDATION: Convert to one-hot encoding if nominal categorical.\n";
                 std::cout << "         For " << unique_count << " categories, create " << (unique_count - 1) << " dummy variables.\n";
-            
+            }           
             std::cout << "\n";
         }
     }
@@ -274,190 +327,6 @@ CovariateReadResult GEMRunner::read_covariate_data()
     return result;
 }
 
-
-/**
- * @brief Read phenotype file
- * 
- * @param opt.pheno_file 
- * @param opt.sampleid_header_name 
- * @param shared_cov_result.sampleID_list 
- * @param valid_indices 
- * @param shared_colnames 
- * @param shared_phenotype_data 
- * @param opt.delim_pheno 
- * @param opt.missing_key 
- */
-
-void GEMRunner::process_phenotype_file() 
-{
-    std::unordered_set<std::string> seen;
-    std::ifstream file(opt.pheno_file);
-
-    if (!file.is_open()) 
-    {
-        std::cerr << "Error opening file: " << opt.pheno_file << std::endl;
-        exit(EXIT_FAILURE);
-    }
-    
-    // Read header (column names)
-    std::string header_line;
-    std::getline(file, header_line);
-    std::stringstream ss(header_line);
-    std::string col_name;
-    int row_indx = 0;
-    int col_indx = 0;
-    int hdr_id_indx;
-    
-    while (std::getline(ss, col_name, opt.delim_pheno)) 
-    {
-        if (seen.insert(col_name).second)
-        {
-            shared_colnames.push_back(col_name);
-            if(col_name == opt.sampleid_header_name)
-            {
-                hdr_id_indx = col_indx;
-            }
-        }
-        else
-        {
-            std::cerr << "ERROR: there are repeated columns'name in the phenotype file please check your file.\n";
-            exit(EXIT_FAILURE); 
-        }
-        ++col_indx;
-    }
-    
-    int num_columns = shared_colnames.size();
-    std::cout << "Total columns: " << num_columns << "\n"; 
-    std::cout << "****************************************************************************\n";
-    shared_phenotype_data.resize(num_columns - 1);
-    // The first two cols are FID and IID
-    if(num_columns < 3)
-    {
-        std::cerr << "ERROR: number of columns in phenotype file at least should be 3.\n";
-        exit(EXIT_FAILURE);
-    }
-
-    std::string line;
-    while(getline(file, line))
-    {
-        std::stringstream ss(line);
-        std::string value;
-        std::ext::V_string values;
-        while(getline(ss, value, opt.delim_pheno))
-        {
-            values.push_back(value);
-        }
-                    
-        if (!line.empty() && line.back() == opt.delim_pheno) 
-        {
-            values.push_back(opt.missing_key);
-        }
-
-        if (values.size() != num_columns) 
-        {
-            std::cerr << "ERROR: expect: " << num_columns << " columns at row: " << row_indx + 1 << " , while there is: " << values.size() << " columns."<< '\n';
-            std::cerr << "If delimiter is space check for extra spaces in line \n";
-            exit(EXIT_FAILURE);
-        }
-
-        if (row_indx >= shared_cov_result.sampleID_list.size())
-        {
-            std::cerr << "ERROR: Sample IDs in pheno file are more than covariate file " << '\n';
-            exit(EXIT_FAILURE);
-        }
-
-        if (values[hdr_id_indx] != shared_cov_result.sampleID_list[row_indx]) 
-        {
-            std::cerr << "ERROR: Sample ID mismatch at line " << row_indx + 1
-                    << ". Expected: " << shared_cov_result.sampleID_list[row_indx]
-                    << ", Found: " << values[hdr_id_indx] << '\n';
-            exit(EXIT_FAILURE);
-        }
-        
-        bool invalid_indices = false;
-
-        for(int i = 2; i < num_columns; i++)
-        {
-            if(values[i] == opt.missing_key || values[i].empty())
-            {
-                shared_phenotype_data[i - 2].push_back(opt.missing_key);
-                invalid_indices = true;
-            }
-            else
-            {
-                shared_phenotype_data[i - 2].push_back(values[i]);
-            }
-        }
-
-        if(!invalid_indices)
-        {
-            shared_pheno_valid_indices.insert(row_indx);
-        }
-        row_indx++;
-    }
-    
-    if (row_indx < shared_cov_result.sampleID_list.size())
-        {
-            std::cerr << "ERROR: Sample IDs in covariate file are more than pheno file " << '\n';
-            exit(EXIT_FAILURE);
-        }
-}
-
-
-/**
- * @brief Remove lines with missing data coming from phenotype file
- * 
- * @param shared_cov_result.sampleID_list
- 
- * @param shared_pheno_valid_indices 
- * @param shared_cov_result.covMap 
- */
-void GEMRunner::clean_covMap_by_invalid_indices() 
-{
-    // Keep each sample ID and it is line number
-    std::unordered_map<std::string, int> seen_count;
-
-    // First pass: track which positions to delete per ID
-    std::unordered_map<std::string, std::ext::V_int> delete_positions;
-
-    for (size_t i = 0; i < shared_cov_result.sampleID_list.size(); ++i) 
-    {
-        // Find the occurance of line inside covData map
-        const std::string& id = shared_cov_result.sampleID_list[i];
-        int pos = seen_count[id]++;
-        if (!shared_pheno_valid_indices.count(i)) 
-        {
-            delete_positions[id].push_back(pos);
-        }
-    }
-
-    // Second pass: remove entries in reverse to preserve indexing
-    for (auto& [id, positions] : delete_positions) 
-    {
-        auto it = shared_cov_result.covMap.find(id);
-        if (it == shared_cov_result.covMap.end()) continue;
-
-        auto& vecs = it->second;
-
-        // Sort in descending order to erase from back to front
-        std::sort(positions.rbegin(), positions.rend());
-        // Remove the missing line from cov data 
-        for (int pos : positions) 
-        {
-            if (pos >= 0 && pos < static_cast<int>(vecs.size())) 
-            {
-                vecs.erase(vecs.begin() + pos);
-            }
-        }
-
-        if (vecs.empty()) 
-        {
-            shared_cov_result.covMap.erase(id);
-        }
-    }
-}
-
-
 /**
  * @brief Check if user provided the kinship file
  * 
@@ -465,17 +334,8 @@ void GEMRunner::clean_covMap_by_invalid_indices()
 
 void GEMRunner::check_kinship_usage() 
 {
-    kin_flag = !opt.kin_path.empty();  // sets true if user provided kin_path
+    kin_flag = !opt.kin_add.empty();  // sets true if user provided kin_path
 }
-
-
-/**
- * @brief calculate dosages for bgen allesss per each sample
- * 
- * @param start_chunck 
- * @param chunks_to_read 
- * @return py::array_t<float> 
- */
 
 /**
  * @brief Function to call null model from python
@@ -486,10 +346,6 @@ void GEMRunner::run_fit_nullmodel()
     NullModel model(opt);
     model.fit_nullmodel(kin_flag,
                         bgen_sample_id,
-                        shared_cov_result,
-                        shared_pheno_valid_indices,
-                        shared_colnames,
-                        shared_phenotype_data,
-                        c2_values // Pass C2 values by reference
+                        is_dup_id                     
     );
 }

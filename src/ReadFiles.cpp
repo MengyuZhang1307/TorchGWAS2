@@ -43,7 +43,7 @@ std::ext::V_string  DataFrame::read_lines(std::string_view path)
 
     if(ifs.fail())
     {
-        fmt::print("Error in reading file {}.\nPlease check your inputs.\n", path);
+        std::cerr << "Error in reading file " << path << ".\nPlease check your inputs.\n";
         exit(EXIT_FAILURE);
     }
 
@@ -107,6 +107,68 @@ void DataFrame::fill_data(std::ext::V_string const& lines, char delim)
     m_nrows = m_data[m_headers[0]].size();
 }
 
+void DataFrame::fill_data(std::ext::V_string const& lines, char delim,
+                          std::ext::V_string const& cov_col_names)
+{
+    std::ext::VV_string vv_strs;
+    for(auto const& line : lines)
+    {
+        std::istringstream iss(line);
+        std::string cell;
+        std::ext::V_string v_str_tmp;
+        while(std::getline(iss, cell, delim))
+        {
+            cell.erase(std::remove(cell.begin(), cell.end(), '\"'), cell.end());
+            if (cell.empty())
+                v_str_tmp.emplace_back(m_missing_key);
+            else
+                v_str_tmp.emplace_back(cell);
+        }
+        vv_strs.emplace_back(v_str_tmp);
+    }
+
+    // all headers
+    std::ext::V_string all_headers = vv_strs[0];
+
+    // find indices of headers to keep
+    std::ext::V_int cov_col_indices;
+    for (int i = 0; i < all_headers.size(); ++i) 
+    {
+        if (std::find(cov_col_names.begin(), cov_col_names.end(), all_headers[i]) != cov_col_names.end()) 
+        {
+            cov_col_indices.push_back(i);
+        }
+    }
+
+    m_ncols = cov_col_indices.size();
+    m_headers.resize(m_ncols);
+
+    // fill data only for kept headers
+    for (int idx = 0; idx < cov_col_indices.size(); ++idx) 
+    {
+        int col = cov_col_indices[idx];
+        m_headers[idx] = all_headers[col];
+        std::ext::V_string values;
+
+        for (int j = 1; j < vv_strs.size(); ++j) 
+        {
+            if (vv_strs[j].size() <= col) 
+            {
+                values.emplace_back(m_missing_key);
+            } 
+            else 
+            {
+                values.emplace_back(vv_strs[j][col]);
+            }
+        }
+        m_data[m_headers[idx]] = values;
+    }
+
+    m_nrows = m_data[m_headers[0]].size();
+}
+
+
+
 void DataFrame::head(int n)
 {
         for(auto const& curr_hdr : m_headers)
@@ -134,6 +196,13 @@ void DataFrame::read_file(std::string_view path, char delim)
     fill_data(v_strs, delim);
 }
 
+void DataFrame::read_file(std::string_view path, char delim, 
+                std::ext::V_string const& cov_col_names)
+{
+    auto v_strs = read_lines(path);
+    fill_data(v_strs, delim, cov_col_names);
+}
+
 std::ext::V_string DataFrame::get_header(std::string const& hdr) const
 {
     auto it = m_data.find(hdr);
@@ -144,7 +213,7 @@ std::ext::V_string DataFrame::get_header(std::string const& hdr) const
     } 
     else 
     {
-        fmt::print("Error: Header {} not found. It must be one of the variables in the submitted file\n", hdr);
+        std::cerr << "Error: Header " << hdr << " not found. It must be one of the variables in the submitted file\n";
         exit(EXIT_FAILURE); // Return an empty vector
     }
 }
@@ -173,48 +242,61 @@ void DataFrame:: remove_missing(std::ext::V_string const& v_hdrs, std::ext::V_in
     }
     m_nrows = m_data[m_headers[0]].size();
 }
-//Remove rows with missing data and match phenoIDs with genofile IDs
+
+
 void DataFrame::match_genoids(std::string hdr_id, std::ext::V_string const& v_hdrs)
 {
-    // Convert m_geno_IDs(bgenIDs) to an unordered set for fast lookup
-    std::unordered_set<std::string> geno_id_set(m_geno_ids.begin(), m_geno_ids.end());
+    // Covariate sample IDs in original row order (can repeat for longitudinal data)
     const std::ext::V_string& sam_ids = m_data[hdr_id];
-    std::vector<int> keep_indices;
 
-    for (int i = 0; i < sam_ids.size(); ++i)
+    // Map: sample ID -> all row indices in cov file
+    std::unordered_map<std::string, std::ext::V_int> cov_index_map;
+    cov_index_map.reserve(sam_ids.size());
+
+    for (int i = 0; i < static_cast<int>(sam_ids.size()); ++i)
     {
-        if (geno_id_set.count(sam_ids[i]) > 0)
-        {
-            keep_indices.push_back(i);
-        } 
+        cov_index_map[sam_ids[i]].push_back(i);
     }
 
-    for (int idx : keep_indices)
-    {
-        bool is_valid_row = true;
+    std::vector<int> matched_indices;  // cov row indices in BGEN order (with repeats)
+    matched_indices.reserve(m_geno_ids.size());  // lower bound; may grow more
 
-        for (const auto& hdr : v_hdrs)
+    // For each BGEN sample ID (preserving BGEN order)
+    for (size_t b = 0; b < m_geno_ids.size(); ++b)
+    {
+        const auto& bid = m_geno_ids[b];
+        auto it_id = cov_index_map.find(bid);
+        if (it_id == cov_index_map.end()) 
+            continue;  // no cov rows for this BGEN ID
+
+        // For *each* cov row attached to this ID
+        for (int cov_idx : it_id->second)
         {
-            auto it = m_data.find(hdr);
-            if (it != m_data.end())
+            // Check if all requested covariate headers have non-missing values
+            bool is_valid = true;
+            for (const auto& hdr : v_hdrs)
             {
-                if (idx < it->second.size() && it->second[idx] == m_missing_key) //check missing value as well
+                auto it_hdr = m_data.find(hdr);
+                if (it_hdr != m_data.end() && cov_idx < static_cast<int>(it_hdr->second.size()))
                 {
-                    // std::cerr << "Warning: missing value at row: " << idx + 1 << " for header: " << hdr << "\n";
-                    is_valid_row = false; // If there's any missing value, mark the row as invalid
-                    break; // No need to check further headers for this row
+                    if (it_hdr->second[cov_idx] == m_missing_key)
+                    {
+                        is_valid = false;
+                        break;
+                    }
                 }
             }
-        }
 
-        if (is_valid_row)
-        {
-            m_valid_indices.push_back(idx);
+            if (is_valid)
+                matched_indices.push_back(cov_idx);
         }
     }
+
+    // Save which ORIGINAL cov rows we kept (in BGEN order, with repeats)
+    m_valid_indices = matched_indices;
+    // Now actually filter the covariate columns down to these rows
     remove_missing(v_hdrs, m_valid_indices);
 }
-
 
 DataFrame DataFrame::copy_by_hdrs(std::ext::V_string const& v_hdrs)
 {
